@@ -1,0 +1,208 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── ENUMS ───────────────────────────────────────────────────────────────────
+
+enum RoleType {
+  SUPER_ADMIN
+  NOTARIO
+  MATRIZADOR
+  ARCHIVADOR
+}
+
+// ─── AUTH / USERS ─────────────────────────────────────────────────────────────
+
+model User {
+  id        String    @id @default(uuid())
+  email     String    @unique
+  password  String
+  firstName String    @map("first_name")
+  lastName  String    @map("last_name")
+  isActive  Boolean   @default(true) @map("is_active")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  userRoles       UserRole[]
+  refreshTokens   RefreshToken[]
+  createdArchives Archive[]     @relation("ArchiveCreatedBy")
+  updatedArchives Archive[]     @relation("ArchiveUpdatedBy")
+  logs            Log[]
+
+  @@index([email])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  isRevoked Boolean  @default(false) @map("is_revoked")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ─── RBAC ─────────────────────────────────────────────────────────────────────
+
+model Role {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  type        RoleType
+  description String?
+  isActive    Boolean   @default(true) @map("is_active")
+  deletedAt   DateTime? @map("deleted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+
+  @@index([type])
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  action      String
+  resource    String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  rolePermissions RolePermission[]
+
+  @@unique([action, resource])
+  @@index([resource])
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String   @id @default(uuid())
+  roleId       String   @map("role_id")
+  permissionId String   @map("permission_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  roleId    String   @map("role_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+// ─── ARCHIVES ─────────────────────────────────────────────────────────────────
+
+model Archive {
+  id           String    @id @default(uuid())
+  code         String    @unique @db.VarChar(17)
+  observations String?   @db.Text
+  pdfUrl       String?   @map("pdf_url")
+  deletedAt    DateTime? @map("deleted_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  createdById  String    @map("created_by_id")
+  updatedById  String?   @map("updated_by_id")
+
+  createdBy     User          @relation("ArchiveCreatedBy", fields: [createdById], references: [id])
+  updatedBy     User?         @relation("ArchiveUpdatedBy", fields: [updatedById], references: [id])
+  grantors      Grantor[]
+  beneficiaries Beneficiary[]
+
+  @@index([code])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("archives")
+}
+
+model Grantor {
+  id               String   @id @default(uuid())
+  archiveId        String   @map("archive_id")
+  nombresCompletos String   @map("nombres_completos")
+  cedulaORuc       String   @map("cedula_o_ruc")
+  nacionalidad     String
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  archive Archive @relation(fields: [archiveId], references: [id], onDelete: Cascade)
+
+  @@index([archiveId])
+  @@index([cedulaORuc])
+  @@map("grantors")
+}
+
+model Beneficiary {
+  id               String   @id @default(uuid())
+  archiveId        String   @map("archive_id")
+  nombresCompletos String   @map("nombres_completos")
+  cedulaORuc       String   @map("cedula_o_ruc")
+  nacionalidad     String
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  archive Archive @relation(fields: [archiveId], references: [id], onDelete: Cascade)
+
+  @@index([archiveId])
+  @@index([cedulaORuc])
+  @@map("beneficiaries")
+}
+
+// ─── LOGS ─────────────────────────────────────────────────────────────────────
+
+model Log {
+  id         String   @id @default(uuid())
+  userId     String?  @map("user_id")
+  action     String
+  endpoint   String?
+  method     String?
+  resource   String?
+  resourceId String?  @map("resource_id")
+  details    Json?
+  ip         String?
+  userAgent  String?  @map("user_agent")
+  statusCode Int?     @map("status_code")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("logs")
+}
+
+// ─── SETTINGS ─────────────────────────────────────────────────────────────────
+
+model Setting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  label     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}

@@ -1,0 +1,50 @@
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { PassportStrategy } from '@nestjs/passport';
+import { ExtractJwt, Strategy } from 'passport-jwt';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { JwtPayload } from '../../../common/decorators/current-user.decorator';
+
+@Injectable()
+export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
+  constructor(
+    private config:  ConfigService,
+    private prisma:  PrismaService,
+  ) {
+    super({
+      jwtFromRequest:   ExtractJwt.fromAuthHeaderAsBearerToken(),
+      secretOrKey:      config.get<string>('jwt.accessSecret')!,
+      ignoreExpiration: false,
+    });
+  }
+
+  async validate(payload: JwtPayload) {
+    const user = await this.prisma.user.findFirst({
+      where:   { id: payload.sub, isActive: true, deletedAt: null },
+      include: {
+        userRoles: {
+          include: {
+            role: {
+              include: {
+                rolePermissions: { include: { permission: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!user) throw new UnauthorizedException('Usuario no encontrado o inactivo');
+
+    const roles = user.userRoles.map((ur) => ur.role.type);
+    const permissions = [
+      ...new Set(
+        user.userRoles.flatMap((ur) =>
+          ur.role.rolePermissions.map((rp) => rp.permission.name),
+        ),
+      ),
+    ];
+
+    return { sub: user.id, email: user.email, roles, permissions } as JwtPayload;
+  }
+}
