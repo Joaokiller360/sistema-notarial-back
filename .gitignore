@@ -11,7 +11,7 @@ build/
 .env.production
 
 # Logs
-logs/
+/logs/
 *.log
 npm-debug.log*
 
@@ -33,7 +33,7 @@ Thumbs.db
 coverage/
 
 # Prisma
-prisma/migrations/
+# migrations must be committed so the server can run prisma migrate deploy
 
 # Docker volumes
 postgres_data/
