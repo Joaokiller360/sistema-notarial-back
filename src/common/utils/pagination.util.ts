@@ -1,6 +1,6 @@
-import { IsNumber, IsOptional, Min, Max } from 'class-validator';
-import { Type } from 'class-transformer';
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsNumber, IsOptional, Min, Max } from "class-validator";
+import { Type } from "class-transformer";
+import { ApiPropertyOptional } from "@nestjs/swagger";
 
 export class PaginationDto {
   @ApiPropertyOptional({ default: 1, minimum: 1 })
@@ -20,14 +20,19 @@ export class PaginationDto {
 }
 
 export interface PaginatedResult<T> {
-  data:  T[];
+  data: T[];
   total: number;
-  page:  number;
+  page: number;
   limit: number;
   pages: number;
 }
 
-export function paginate<T>(data: T[], total: number, page: number, limit: number): PaginatedResult<T> {
+export function paginate<T>(
+  data: T[],
+  total: number,
+  page: number,
+  limit: number,
+): PaginatedResult<T> {
   return {
     data,
     total,

@@ -1,8 +1,13 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
-import { RoleType } from '@prisma/client';
-import { ROLES_KEY } from '../decorators/roles.decorator';
-import { JwtPayload } from '../decorators/current-user.decorator';
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+} from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
+import { RoleType } from "@prisma/client";
+import { ROLES_KEY } from "../decorators/roles.decorator";
+import { JwtPayload } from "../decorators/current-user.decorator";
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -22,7 +27,7 @@ export class RolesGuard implements CanActivate {
     const hasRole = required.some((role) => user.roles?.includes(role));
 
     if (!hasRole) {
-      throw new ForbiddenException('Rol insuficiente para esta acción');
+      throw new ForbiddenException("Rol insuficiente para esta acción");
     }
 
     return true;

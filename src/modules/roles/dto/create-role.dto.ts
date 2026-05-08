@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
   IsArray,
   IsEnum,
@@ -7,11 +7,11 @@ import {
   IsString,
   IsUUID,
   MinLength,
-} from 'class-validator';
-import { RoleType } from '@prisma/client';
+} from "class-validator";
+import { RoleType } from "@prisma/client";
 
 export class CreateRoleDto {
-  @ApiProperty({ example: 'Notario Suplente' })
+  @ApiProperty({ example: "Notario Suplente" })
   @IsString()
   @IsNotEmpty()
   @MinLength(3)
@@ -26,9 +26,12 @@ export class CreateRoleDto {
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({ type: [String], description: 'IDs de permisos a asignar al rol' })
+  @ApiPropertyOptional({
+    type: [String],
+    description: "IDs de permisos a asignar al rol",
+  })
   @IsOptional()
   @IsArray()
-  @IsUUID('4', { each: true })
+  @IsUUID("4", { each: true })
   permissionIds?: string[];
 }

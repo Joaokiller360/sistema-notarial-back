@@ -7,7 +7,7 @@ export function validateCedula(cedula: string): boolean {
   const province = parseInt(cedula.substring(0, 2), 10);
   if (province < 1 || province > 24) return false;
 
-  const digits   = cedula.split('').map(Number);
+  const digits = cedula.split("").map(Number);
   const verifier = digits[9];
   let sum = 0;
 
@@ -32,13 +32,13 @@ export function validateRuc(ruc: string): boolean {
   if (!/^\d{13}$/.test(ruc)) return false;
 
   const suffix = ruc.substring(10);
-  if (!/^0{0,1}[1-9]{1}\d{0,1}$/.test(suffix) && suffix !== '001') return false;
+  if (!/^0{0,1}[1-9]{1}\d{0,1}$/.test(suffix) && suffix !== "001") return false;
 
   const thirdDigit = parseInt(ruc[2], 10);
 
   if (thirdDigit < 6) {
     // Natural person
-    return validateCedula(ruc.substring(0, 10)) && ruc.substring(10) === '001';
+    return validateCedula(ruc.substring(0, 10)) && ruc.substring(10) === "001";
   }
 
   return true;
