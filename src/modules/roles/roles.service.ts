@@ -4,7 +4,6 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
-import { LogsService } from "../logs/logs.service";
 import { CreateRoleDto } from "./dto/create-role.dto";
 import { UpdateRoleDto } from "./dto/update-role.dto";
 import {
@@ -30,10 +29,7 @@ const ROLE_SELECT = {
 
 @Injectable()
 export class RolesService {
-  constructor(
-    private prisma: PrismaService,
-    private logs: LogsService,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
   async findAll(page = 1, limit = 20) {
     const where = { deletedAt: null };
@@ -65,7 +61,7 @@ export class RolesService {
     if (existing)
       throw new BadRequestException("Ya existe un rol con ese nombre");
 
-    const role = await this.prisma.role.create({
+    return this.prisma.role.create({
       data: {
         name: dto.name,
         type: dto.type,
@@ -78,15 +74,6 @@ export class RolesService {
       },
       select: ROLE_SELECT,
     });
-
-    await this.logs.log({
-      userId: requesterId,
-      action: "CREATE_ROLE",
-      resource: "roles",
-      resourceId: role.id,
-      ip,
-    });
-    return role;
   }
 
   async update(
@@ -114,20 +101,11 @@ export class RolesService {
     }
 
     const { permissionIds: _, ...updateData } = dto;
-    const role = await this.prisma.role.update({
+    return this.prisma.role.update({
       where: { id },
       data: updateData,
       select: ROLE_SELECT,
     });
-
-    await this.logs.log({
-      userId: requesterId,
-      action: "UPDATE_ROLE",
-      resource: "roles",
-      resourceId: id,
-      ip,
-    });
-    return role;
   }
 
   async remove(id: string, requesterId: string, ip: string) {
@@ -149,18 +127,9 @@ export class RolesService {
       where: { id },
       data: { deletedAt: new Date() },
     });
-    await this.logs.log({
-      userId: requesterId,
-      action: "DELETE_ROLE",
-      resource: "roles",
-      resourceId: id,
-      ip,
-    });
 
     return { message: "Rol eliminado correctamente" };
   }
-
-  // ─── ASSIGN / REVOKE ─────────────────────────────────────────────────────────
 
   async assignToUser(
     userId: string,
@@ -173,14 +142,6 @@ export class RolesService {
       update: {},
       create: { userId, roleId },
     });
-    await this.logs.log({
-      userId: requesterId,
-      action: "ASSIGN_ROLE",
-      resource: "roles",
-      resourceId: roleId,
-      details: { userId },
-      ip,
-    });
     return { message: "Rol asignado correctamente" };
   }
 
@@ -191,14 +152,6 @@ export class RolesService {
     ip: string,
   ) {
     await this.prisma.userRole.deleteMany({ where: { userId, roleId } });
-    await this.logs.log({
-      userId: requesterId,
-      action: "REVOKE_ROLE",
-      resource: "roles",
-      resourceId: roleId,
-      details: { userId },
-      ip,
-    });
     return { message: "Rol revocado correctamente" };
   }
 }

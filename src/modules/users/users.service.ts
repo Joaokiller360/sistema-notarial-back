@@ -8,7 +8,6 @@ import { ConfigService } from "@nestjs/config";
 import { RoleType } from "@prisma/client";
 import * as bcrypt from "bcrypt";
 import { PrismaService } from "../../prisma/prisma.service";
-import { LogsService } from "../logs/logs.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { JwtPayload } from "../../common/decorators/current-user.decorator";
@@ -34,7 +33,6 @@ const USER_SELECT = {
   },
 };
 
-// Role hierarchy: lower index = higher rank
 const ROLE_HIERARCHY = [
   RoleType.SUPER_ADMIN,
   RoleType.NOTARIO,
@@ -47,7 +45,6 @@ export class UsersService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
-    private logs: LogsService,
   ) {}
 
   async findAll(page = 1, limit = 20, search?: string) {
@@ -83,7 +80,6 @@ export class UsersService {
   }
 
   async create(dto: CreateUserDto, requester: JwtPayload, ip: string) {
-    // NOTARIO can only create MATRIZADOR and ARCHIVADOR
     if (
       !requester.roles.includes(RoleType.SUPER_ADMIN) &&
       dto.roleIds?.length
@@ -101,7 +97,7 @@ export class UsersService {
       this.config.get<number>("jwt.bcryptRounds")!,
     );
 
-    const user = await this.prisma.user.create({
+    return this.prisma.user.create({
       data: {
         email: dto.email,
         password: hashed,
@@ -116,16 +112,6 @@ export class UsersService {
       },
       select: USER_SELECT,
     });
-
-    await this.logs.log({
-      userId: requester.sub,
-      action: "CREATE_USER",
-      resource: "users",
-      resourceId: user.id,
-      ip,
-    });
-
-    return user;
   }
 
   async update(
@@ -152,20 +138,11 @@ export class UsersService {
     }
 
     const { roleIds: _, ...updateData } = dto;
-    const user = await this.prisma.user.update({
+    return this.prisma.user.update({
       where: { id },
       data: updateData,
       select: USER_SELECT,
     });
-
-    await this.logs.log({
-      userId: requester.sub,
-      action: "UPDATE_USER",
-      resource: "users",
-      resourceId: id,
-      ip,
-    });
-    return user;
   }
 
   async remove(id: string, requesterId: string, ip: string) {
@@ -180,18 +157,9 @@ export class UsersService {
       where: { id },
       data: { deletedAt: new Date(), isActive: false },
     });
-    await this.logs.log({
-      userId: requesterId,
-      action: "DELETE_USER",
-      resource: "users",
-      resourceId: id,
-      ip,
-    });
 
     return { message: "Usuario eliminado correctamente" };
   }
-
-  // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
   private async validateRoleCreationPermission(
     roleIds: string[],
