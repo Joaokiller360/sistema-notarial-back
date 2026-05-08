@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
+import { LogsService } from "../logs/logs.service";
 import {
   BulkUpdateSettingsDto,
   UpdateSettingDto,
@@ -7,7 +8,10 @@ import {
 
 @Injectable()
 export class SettingsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private logs: LogsService,
+  ) {}
 
   async findAll() {
     const settings = await this.prisma.setting.findMany({
@@ -35,11 +39,21 @@ export class SettingsService {
     requesterId: string,
     ip: string,
   ) {
-    return this.prisma.setting.upsert({
+    const setting = await this.prisma.setting.upsert({
       where: { key },
       update: { value: dto.value },
       create: { key, value: dto.value },
     });
+
+    await this.logs.log({
+      userId: requesterId,
+      action: "UPDATE_SETTING",
+      resource: "settings",
+      details: { key, value: dto.value },
+      ip,
+    });
+
+    return setting;
   }
 
   async bulkUpdate(
@@ -47,7 +61,7 @@ export class SettingsService {
     requesterId: string,
     ip: string,
   ) {
-    return this.prisma.$transaction(
+    const updates = await this.prisma.$transaction(
       Object.entries(dto.settings).map(([key, value]) =>
         this.prisma.setting.upsert({
           where: { key },
@@ -56,5 +70,15 @@ export class SettingsService {
         }),
       ),
     );
+
+    await this.logs.log({
+      userId: requesterId,
+      action: "BULK_UPDATE_SETTINGS",
+      resource: "settings",
+      details: { keys: Object.keys(dto.settings) },
+      ip,
+    });
+
+    return updates;
   }
 }

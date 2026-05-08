@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
+import { LogsService } from "../logs/logs.service";
 import { ArchiveType, CreateArchiveDto } from "./dto/create-archive.dto";
 import { UpdateArchiveDto } from "./dto/update-archive.dto";
 import {
@@ -24,7 +25,10 @@ const ARCHIVE_INCLUDE = {
 
 @Injectable()
 export class ArchivesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private logs: LogsService,
+  ) {}
 
   async findAll(page = 1, limit = 20, search?: string, type?: ArchiveType) {
     const where: any = { deletedAt: null };
@@ -83,7 +87,7 @@ export class ArchivesService {
     if (existing)
       throw new BadRequestException(`El código "${dto.code}" ya está en uso`);
 
-    return this.prisma.archive.create({
+    const archive = await this.prisma.archive.create({
       data: {
         code: dto.code,
         type: dto.type,
@@ -98,6 +102,15 @@ export class ArchivesService {
       },
       include: ARCHIVE_INCLUDE,
     });
+
+    await this.logs.log({
+      userId,
+      action: "CREATE_ARCHIVE",
+      resource: "archives",
+      resourceId: archive.id,
+      ip,
+    });
+    return archive;
   }
 
   async update(id: string, dto: UpdateArchiveDto, userId: string, ip: string) {
@@ -141,10 +154,19 @@ export class ArchivesService {
       });
     });
 
-    return this.prisma.archive.findUnique({
+    const updated = await this.prisma.archive.findUnique({
       where: { id },
       include: ARCHIVE_INCLUDE,
     });
+
+    await this.logs.log({
+      userId,
+      action: "UPDATE_ARCHIVE",
+      resource: "archives",
+      resourceId: id,
+      ip,
+    });
+    return updated;
   }
 
   async remove(id: string, userId: string, ip: string) {
@@ -157,6 +179,13 @@ export class ArchivesService {
       where: { id },
       data: { deletedAt: new Date() },
     });
+    await this.logs.log({
+      userId,
+      action: "DELETE_ARCHIVE",
+      resource: "archives",
+      resourceId: id,
+      ip,
+    });
 
     return { message: "Archivo eliminado correctamente" };
   }
@@ -167,10 +196,19 @@ export class ArchivesService {
     });
     if (!archive) throw new NotFoundException("Archivo no encontrado");
 
-    return this.prisma.archive.update({
+    const updated = await this.prisma.archive.update({
       where: { id },
       data: { pdfUrl, updatedById: userId },
       include: ARCHIVE_INCLUDE,
     });
+
+    await this.logs.log({
+      userId,
+      action: "UPLOAD_PDF",
+      resource: "archives",
+      resourceId: id,
+      ip,
+    });
+    return updated;
   }
 }

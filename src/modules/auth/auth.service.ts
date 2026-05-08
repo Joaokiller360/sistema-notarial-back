@@ -11,6 +11,7 @@ import { RoleType } from "@prisma/client";
 import * as bcrypt from "bcrypt";
 import { v4 as uuidv4 } from "uuid";
 import { PrismaService } from "../../prisma/prisma.service";
+import { LogsService } from "../logs/logs.service";
 import { LoginDto } from "./dto/login.dto";
 import { ChangePasswordDto, ResetPasswordDto } from "./dto/change-password.dto";
 import { LoginResponseDto } from "./dto/auth-response.dto";
@@ -21,6 +22,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private config: ConfigService,
+    private logs: LogsService,
   ) {}
 
   // ─── LOGIN ──────────────────────────────────────────────────────────────────
@@ -67,6 +69,14 @@ export class AuthService {
       roles,
       permissions,
     );
+
+    await this.logs.log({
+      userId: user.id,
+      action: "LOGIN",
+      resource: "auth",
+      ip,
+      userAgent,
+    });
 
     return {
       tokens,
@@ -142,6 +152,8 @@ export class AuthService {
       where: { token: refreshToken, userId },
       data: { isRevoked: true },
     });
+
+    await this.logs.log({ userId, action: "LOGOUT", resource: "auth", ip });
   }
 
   async logoutAll(userId: string): Promise<void> {
@@ -174,6 +186,13 @@ export class AuthService {
       data: { password: hashed },
     });
     await this.logoutAll(userId);
+
+    await this.logs.log({
+      userId,
+      action: "CHANGE_PASSWORD",
+      resource: "auth",
+      ip,
+    });
   }
 
   // ─── RESET PASSWORD (admin / notario) ────────────────────────────────────────
@@ -216,6 +235,14 @@ export class AuthService {
       data: { password: hashed },
     });
     await this.logoutAll(dto.userId);
+
+    await this.logs.log({
+      userId: requesterId,
+      action: "RESET_PASSWORD",
+      resource: "users",
+      resourceId: dto.userId,
+      ip,
+    });
 
     return { temporaryPassword: tempPassword };
   }

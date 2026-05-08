@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
+import { LogsService } from "../logs/logs.service";
 import { CreatePermissionDto } from "./dto/create-permission.dto";
 import { UpdatePermissionDto } from "./dto/update-permission.dto";
 import {
@@ -13,7 +14,10 @@ import {
 
 @Injectable()
 export class PermissionsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private logs: LogsService,
+  ) {}
 
   async findAll(page = 1, limit = 50) {
     const [data, total] = await this.prisma.$transaction([
@@ -38,7 +42,15 @@ export class PermissionsService {
     });
     if (existing) throw new BadRequestException("El permiso ya existe");
 
-    return this.prisma.permission.create({ data: dto });
+    const perm = await this.prisma.permission.create({ data: dto });
+    await this.logs.log({
+      userId: requesterId,
+      action: "CREATE_PERMISSION",
+      resource: "permissions",
+      resourceId: perm.id,
+      ip,
+    });
+    return perm;
   }
 
   async update(
@@ -50,7 +62,18 @@ export class PermissionsService {
     const existing = await this.prisma.permission.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException("Permiso no encontrado");
 
-    return this.prisma.permission.update({ where: { id }, data: dto });
+    const perm = await this.prisma.permission.update({
+      where: { id },
+      data: dto,
+    });
+    await this.logs.log({
+      userId: requesterId,
+      action: "UPDATE_PERMISSION",
+      resource: "permissions",
+      resourceId: id,
+      ip,
+    });
+    return perm;
   }
 
   async remove(id: string, requesterId: string, ip: string) {
@@ -58,6 +81,13 @@ export class PermissionsService {
     if (!existing) throw new NotFoundException("Permiso no encontrado");
 
     await this.prisma.permission.delete({ where: { id } });
+    await this.logs.log({
+      userId: requesterId,
+      action: "DELETE_PERMISSION",
+      resource: "permissions",
+      resourceId: id,
+      ip,
+    });
     return { message: "Permiso eliminado correctamente" };
   }
 
@@ -72,6 +102,13 @@ export class PermissionsService {
       update: {},
       create: { roleId, permissionId },
     });
+    await this.logs.log({
+      userId: requesterId,
+      action: "GRANT_PERMISSION",
+      resource: "permissions",
+      details: { roleId, permissionId },
+      ip,
+    });
     return { message: "Permiso otorgado correctamente" };
   }
 
@@ -83,6 +120,13 @@ export class PermissionsService {
   ) {
     await this.prisma.rolePermission.deleteMany({
       where: { roleId, permissionId },
+    });
+    await this.logs.log({
+      userId: requesterId,
+      action: "REVOKE_PERMISSION",
+      resource: "permissions",
+      details: { roleId, permissionId },
+      ip,
     });
     return { message: "Permiso revocado correctamente" };
   }

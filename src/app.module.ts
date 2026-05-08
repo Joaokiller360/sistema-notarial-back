@@ -14,6 +14,7 @@ import { UsersModule } from "./modules/users/users.module";
 import { RolesModule } from "./modules/roles/roles.module";
 import { PermissionsModule } from "./modules/permissions/permissions.module";
 import { ArchivesModule } from "./modules/archives/archives.module";
+import { LogsModule } from "./modules/logs/logs.module";
 import { SettingsModule } from "./modules/settings/settings.module";
 import { HealthModule } from "./common/health/health.module";
 
@@ -50,6 +51,7 @@ import { HealthModule } from "./common/health/health.module";
     RolesModule,
     PermissionsModule,
     ArchivesModule,
+    LogsModule,
     SettingsModule,
     HealthModule,
   ],

@@ -1,9 +1,10 @@
 import { Module } from "@nestjs/common";
 import { ArchivesController } from "./archives.controller";
 import { ArchivesService } from "./archives.service";
+import { LogsModule } from "../logs/logs.module";
 
 @Module({
-  imports: [],
+  imports: [LogsModule],
   controllers: [ArchivesController],
   providers: [ArchivesService],
   exports: [ArchivesService],
