@@ -35,7 +35,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-notaria_user}:${POSTGRES_PASSWORD:-notaria_pass}@postgres:5432/${POSTGRES_DB:-notaria_db}?schema=public
       NODE_ENV:     production
     ports:
-      - '${PORT:-3000}:3000'
+      - '${PORT:-8000}:8000'
     volumes:
       - uploads_data:/app/uploads
       - logs_data:/app/logs
