@@ -7,7 +7,8 @@ WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma/
 
-RUN npm ci --only=production=false
+RUN apk add --no-cache openssl && \
+    npm ci
 
 # Generate Prisma client
 RUN npx prisma generate
@@ -31,7 +32,8 @@ RUN addgroup -g 1001 -S nodejs && \
 COPY package*.json ./
 COPY prisma ./prisma/
 
-RUN npm ci --only=production && \
+RUN apk add --no-cache openssl && \
+    npm ci --only=production && \
     npx prisma generate && \
     npm cache clean --force
 

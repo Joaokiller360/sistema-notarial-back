@@ -6,7 +6,7 @@ dist
 .gitignore
 README.md
 coverage
-logs
+/logs
 *.log
 .vscode
 .idea
