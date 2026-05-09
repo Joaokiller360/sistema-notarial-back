@@ -28,7 +28,7 @@ services:
       context: .
       dockerfile: Dockerfile
       target: production
-    container_name: notaria_api
+    container_name: '${API_CONTAINER_NAME:-notaria_api}'
     restart: unless-stopped
     env_file: .env
     environment:
