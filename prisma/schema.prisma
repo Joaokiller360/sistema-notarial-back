@@ -181,6 +181,20 @@ model Beneficiary {
   @@map("beneficiaries")
 }
 
+// ─── CLIENTS ──────────────────────────────────────────────────────────────────
+
+model Client {
+  id               String   @id @default(uuid())
+  nombresCompletos String   @map("nombres_completos")
+  cedulaORuc       String?  @map("cedula_o_ruc")
+  nacionalidad     String?
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@index([cedulaORuc])
+  @@map("clients")
+}
+
 // ─── LOGS ─────────────────────────────────────────────────────────────────────
 
 model Log {

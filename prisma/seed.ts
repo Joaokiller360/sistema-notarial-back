@@ -29,6 +29,9 @@ const PERMISSIONS = [
   { name: 'archives:read',        action: 'read',           resource: 'archives',    description: 'Ver archivos notariales' },
   { name: 'archives:update',      action: 'update',         resource: 'archives',    description: 'Editar archivos notariales' },
   { name: 'archives:delete',      action: 'delete',         resource: 'archives',    description: 'Eliminar archivos notariales' },
+  // Clients
+  { name: 'clients:create',       action: 'create',         resource: 'clients',     description: 'Crear clientes' },
+  { name: 'clients:read',         action: 'read',           resource: 'clients',     description: 'Ver clientes' },
   // Logs
   { name: 'logs:read',            action: 'read',           resource: 'logs',        description: 'Ver logs del sistema' },
   // Settings
@@ -44,6 +47,7 @@ const ROLE_PERMISSIONS: Record<RoleType, string[]> = {
     'roles:create', 'roles:read', 'roles:update', 'roles:delete', 'roles:assign',
     'permissions:create', 'permissions:read', 'permissions:update', 'permissions:delete', 'permissions:grant',
     'archives:create', 'archives:read', 'archives:update', 'archives:delete',
+    'clients:create', 'clients:read',
     'logs:read',
     'settings:read', 'settings:update',
   ],
@@ -52,12 +56,15 @@ const ROLE_PERMISSIONS: Record<RoleType, string[]> = {
     'roles:read', 'roles:assign',
     'permissions:read', 'permissions:grant',
     'archives:create', 'archives:read', 'archives:update',
+    'clients:create', 'clients:read',
   ],
   MATRIZADOR: [
     'archives:read',
+    'clients:read',
   ],
   ARCHIVADOR: [
     'archives:create', 'archives:read', 'archives:update',
+    'clients:create', 'clients:read',
   ],
 };
 
