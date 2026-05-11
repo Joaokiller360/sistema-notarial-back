@@ -13,14 +13,13 @@ import {
   ApiBearerAuth,
   ApiBody,
   ApiOperation,
-  ApiQuery,
   ApiResponse,
   ApiTags,
 } from "@nestjs/swagger";
 import { Request } from "express";
 import { ClientsService } from "./clients.service";
 import { BulkCreateClientsDto, CreateClientDto } from "./dto/create-client.dto";
-import { PaginationDto } from "../../common/utils/pagination.util";
+import { GetClientsDto } from "./dto/get-clients.dto";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
@@ -39,12 +38,8 @@ export class ClientsController {
   @Get()
   @RequirePermissions("clients:read")
   @ApiOperation({ summary: "Buscar clientes por nombre o cédula/RUC" })
-  @ApiQuery({ name: "search", required: false, description: "Nombre o cédula/RUC" })
-  findAll(
-    @Query() pagination: PaginationDto,
-    @Query("search") search?: string,
-  ) {
-    return this.clientsService.findAll(search, pagination.page, pagination.limit);
+  findAll(@Query() dto: GetClientsDto) {
+    return this.clientsService.findAll(dto.search, dto.page, dto.limit);
   }
 
   @Post()
