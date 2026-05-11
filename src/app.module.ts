@@ -17,6 +17,7 @@ import { ArchivesModule } from "./modules/archives/archives.module";
 import { LogsModule } from "./modules/logs/logs.module";
 import { SettingsModule } from "./modules/settings/settings.module";
 import { HealthModule } from "./common/health/health.module";
+import { FilesModule } from "./modules/files/files.module";
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { HealthModule } from "./common/health/health.module";
     LogsModule,
     SettingsModule,
     HealthModule,
+    FilesModule,
   ],
 })
 export class AppModule {}
