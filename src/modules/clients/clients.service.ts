@@ -2,6 +2,10 @@ import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { LogsService } from "../logs/logs.service";
 import { BulkCreateClientsDto, CreateClientDto } from "./dto/create-client.dto";
+import {
+  getPrismaSkipTake,
+  paginate,
+} from "../../common/utils/pagination.util";
 
 @Injectable()
 export class ClientsService {
@@ -9,6 +13,28 @@ export class ClientsService {
     private prisma: PrismaService,
     private logs: LogsService,
   ) {}
+
+  async findAll(search: string | undefined, page: number, limit: number) {
+    const where = search
+      ? {
+          OR: [
+            { nombresCompletos: { contains: search, mode: "insensitive" as const } },
+            { cedulaORuc: { contains: search, mode: "insensitive" as const } },
+          ],
+        }
+      : {};
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.client.findMany({
+        where,
+        orderBy: { nombresCompletos: "asc" },
+        ...getPrismaSkipTake(page, limit),
+      }),
+      this.prisma.client.count({ where }),
+    ]);
+
+    return paginate(data, total, page, limit);
+  }
 
   async create(dto: CreateClientDto, userId: string, ip: string) {
     const client = await this.prisma.client.create({ data: dto });
