@@ -3,9 +3,10 @@ import { ArchivesController } from "./archives.controller";
 import { ArchivesService } from "./archives.service";
 import { LogsModule } from "../logs/logs.module";
 import { S3Module } from "../../common/s3/s3.module";
+import { SystemModule } from "../system/system.module";
 
 @Module({
-  imports: [LogsModule, S3Module],
+  imports: [LogsModule, S3Module, SystemModule],
   controllers: [ArchivesController],
   providers: [ArchivesService],
   exports: [ArchivesService],

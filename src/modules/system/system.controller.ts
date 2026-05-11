@@ -14,19 +14,20 @@ import { UpdateSystemConfigDto } from "./dto/system-config.dto";
 
 @ApiTags("System")
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
-@RequireRoles(RoleType.SUPER_ADMIN)
 @Controller("system")
 export class SystemController {
   constructor(private readonly systemService: SystemService) {}
 
   @Get("config")
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: "Obtener configuración del sistema" })
   getConfig() {
     return this.systemService.getConfig();
   }
 
   @Patch("config")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @RequireRoles(RoleType.SUPER_ADMIN)
   @ApiOperation({ summary: "Actualizar configuración del sistema" })
   updateConfig(
     @Body() dto: UpdateSystemConfigDto,

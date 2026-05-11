@@ -7,5 +7,6 @@ import { LogsModule } from "../logs/logs.module";
   imports: [LogsModule],
   controllers: [SystemController],
   providers: [SystemService],
+  exports: [SystemService],
 })
 export class SystemModule {}

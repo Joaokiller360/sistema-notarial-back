@@ -9,6 +9,7 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
+  PayloadTooLargeException,
   Post,
   Query,
   Req,
@@ -41,6 +42,7 @@ import {
 } from "../../common/decorators/current-user.decorator";
 import { PaginationDto } from "../../common/utils/pagination.util";
 import { S3Service } from "../../common/s3/s3.service";
+import { SystemService } from "../system/system.service";
 
 const pdfFilter = (req: any, file: Express.Multer.File, cb: any) => {
   if (file.mimetype !== "application/pdf") {
@@ -58,6 +60,7 @@ export class ArchivesController {
   constructor(
     private readonly archivesService: ArchivesService,
     private readonly s3Service: S3Service,
+    private readonly systemService: SystemService,
   ) {}
 
   @Get()
@@ -149,7 +152,7 @@ export class ArchivesController {
       storage: memoryStorage(),
       fileFilter: pdfFilter,
       limits: {
-        fileSize: parseInt(process.env.MAX_FILE_SIZE || "10485760", 10),
+        fileSize: 500 * 1024 * 1024,
       },
     }),
   )
@@ -160,6 +163,12 @@ export class ArchivesController {
     @Req() req: Request,
   ) {
     if (!file) throw new BadRequestException("No se proporcionó archivo PDF");
+    const { maxPdfSizeMb } = await this.systemService.getConfig();
+    if (file.size > maxPdfSizeMb * 1024 * 1024) {
+      throw new PayloadTooLargeException(
+        `El archivo supera el límite permitido de ${maxPdfSizeMb} MB`,
+      );
+    }
     const s3Key = await this.s3Service.uploadPdf(file.buffer);
     const ip = req.ip || req.socket.remoteAddress || "";
     return this.archivesService.attachPdf(id, s3Key, user.sub, ip);
