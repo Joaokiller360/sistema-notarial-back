@@ -92,6 +92,7 @@ export class ArchivesService {
         code: dto.code,
         type: dto.type,
         observations: dto.observations,
+        documentDate: dto.documentDate ? new Date(dto.documentDate) : undefined,
         createdById: userId,
         grantors: {
           create: dto.grantors,

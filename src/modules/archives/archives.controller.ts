@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -26,9 +27,8 @@ import {
   ApiTags,
 } from "@nestjs/swagger";
 import { Request, Response } from "express";
-import { diskStorage } from "multer";
-import { extname, join } from "path";
-import { v4 as uuidv4 } from "uuid";
+import { memoryStorage } from "multer";
+import { join } from "path";
 import { ArchivesService } from "./archives.service";
 import { ArchiveType, CreateArchiveDto } from "./dto/create-archive.dto";
 import { UpdateArchiveDto } from "./dto/update-archive.dto";
@@ -40,13 +40,7 @@ import {
   JwtPayload,
 } from "../../common/decorators/current-user.decorator";
 import { PaginationDto } from "../../common/utils/pagination.util";
-
-const pdfStorage = diskStorage({
-  destination: (req, file, cb) =>
-    cb(null, process.env.UPLOAD_DEST || "./uploads"),
-  filename: (req, file, cb) =>
-    cb(null, `${uuidv4()}${extname(file.originalname)}`),
-});
+import { S3Service } from "../../common/s3/s3.service";
 
 const pdfFilter = (req: any, file: Express.Multer.File, cb: any) => {
   if (file.mimetype !== "application/pdf") {
@@ -61,7 +55,10 @@ const pdfFilter = (req: any, file: Express.Multer.File, cb: any) => {
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller("archives")
 export class ArchivesController {
-  constructor(private readonly archivesService: ArchivesService) {}
+  constructor(
+    private readonly archivesService: ArchivesService,
+    private readonly s3Service: S3Service,
+  ) {}
 
   @Get()
   @RequirePermissions("archives:read")
@@ -139,7 +136,7 @@ export class ArchivesController {
   @Post(":id/upload-pdf")
   @RequirePermissions("archives:update")
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Subir PDF al archivo notarial" })
+  @ApiOperation({ summary: "Subir PDF al archivo notarial (almacenado en S3)" })
   @ApiConsumes("multipart/form-data")
   @ApiBody({
     schema: {
@@ -149,7 +146,7 @@ export class ArchivesController {
   })
   @UseInterceptors(
     FileInterceptor("file", {
-      storage: pdfStorage,
+      storage: memoryStorage(),
       fileFilter: pdfFilter,
       limits: {
         fileSize: parseInt(process.env.MAX_FILE_SIZE || "10485760", 10),
@@ -162,10 +159,10 @@ export class ArchivesController {
     @CurrentUser() user: JwtPayload,
     @Req() req: Request,
   ) {
-    if (!file) throw new Error("No se proporcionó archivo PDF");
-    const pdfUrl = `/uploads/${file.filename}`;
+    if (!file) throw new BadRequestException("No se proporcionó archivo PDF");
+    const s3Key = await this.s3Service.uploadPdf(file.buffer);
     const ip = req.ip || req.socket.remoteAddress || "";
-    return this.archivesService.attachPdf(id, pdfUrl, user.sub, ip);
+    return this.archivesService.attachPdf(id, s3Key, user.sub, ip);
   }
 
   // ─── PDF VIEW ────────────────────────────────────────────────────────────────
@@ -181,8 +178,15 @@ export class ArchivesController {
         .json({ message: "Este archivo no tiene PDF adjunto" });
     }
 
-    const filename = archive.pdfUrl.replace("/uploads/", "");
-    const filePath = join(process.cwd(), "uploads", filename);
-    return res.sendFile(filePath);
+    // Legacy: files stored locally before S3 migration
+    if (archive.pdfUrl.startsWith("/uploads/")) {
+      const filename = archive.pdfUrl.replace("/uploads/", "");
+      const filePath = join(process.cwd(), "uploads", filename);
+      return res.sendFile(filePath);
+    }
+
+    // S3: generate a pre-signed URL valid for 1 hour
+    const signedUrl = await this.s3Service.getSignedUrl(archive.pdfUrl);
+    return res.redirect(signedUrl);
   }
 }

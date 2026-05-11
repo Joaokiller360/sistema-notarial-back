@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
   ArrayMinSize,
   IsArray,
+  IsDateString,
   IsEnum,
   IsNotEmpty,
   IsOptional,
@@ -95,9 +96,17 @@ export class CreateArchiveDto {
   @MaxLength(2000)
   observations?: string;
 
+  @ApiPropertyOptional({
+    example: "2024-03-15",
+    description: "Fecha del documento/escritura (ISO 8601)",
+  })
+  @IsOptional()
+  @IsDateString()
+  documentDate?: string;
+
   @ApiProperty({ type: [GrantorDto], description: "Lista de otorgantes" })
   @IsArray()
-  @ArrayMinSize(1, { message: "Debe haber al menos un otorgante" })
+  @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => GrantorDto)
   grantors: GrantorDto[];
@@ -107,7 +116,7 @@ export class CreateArchiveDto {
     description: "Lista de beneficiarios (a favor de)",
   })
   @IsArray()
-  @ArrayMinSize(1, { message: "Debe haber al menos un beneficiario" })
+  @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => BeneficiaryDto)
   beneficiaries: BeneficiaryDto[];
