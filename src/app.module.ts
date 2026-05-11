@@ -19,6 +19,7 @@ import { SettingsModule } from "./modules/settings/settings.module";
 import { HealthModule } from "./common/health/health.module";
 import { FilesModule } from "./modules/files/files.module";
 import { ClientsModule } from "./modules/clients/clients.module";
+import { SystemModule } from "./modules/system/system.module";
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { ClientsModule } from "./modules/clients/clients.module";
     HealthModule,
     FilesModule,
     ClientsModule,
+    SystemModule,
   ],
 })
 export class AppModule {}
