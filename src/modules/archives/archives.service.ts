@@ -5,12 +5,18 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { LogsService } from "../logs/logs.service";
-import { ArchiveType, CreateArchiveDto } from "./dto/create-archive.dto";
+import {
+  ArchiveType,
+  BeneficiaryDto,
+  CreateArchiveDto,
+  GrantorDto,
+} from "./dto/create-archive.dto";
 import { UpdateArchiveDto } from "./dto/update-archive.dto";
 import {
   getPrismaSkipTake,
   paginate,
 } from "../../common/utils/pagination.util";
+import { validateIdentificacion } from "../../common/utils/identification.helper";
 
 const ARCHIVE_INCLUDE = {
   createdBy: {
@@ -22,6 +28,39 @@ const ARCHIVE_INCLUDE = {
   grantors: true,
   beneficiaries: true,
 };
+
+/** Maps GrantorDto/BeneficiaryDto to DB shape, storing passport in cedulaORuc. */
+function mapParticipant(p: GrantorDto | BeneficiaryDto) {
+  return {
+    nombresCompletos: p.nombresCompletos,
+    cedulaORuc: p.es_pasaporte ? (p.pasaporte as string) : (p.cedulaORuc as string),
+    nacionalidad: p.nacionalidad,
+  };
+}
+
+/** Validates identification for all grantors and beneficiaries, throwing on first error. */
+function validateParticipants(
+  grantors: GrantorDto[],
+  beneficiaries: BeneficiaryDto[],
+): void {
+  for (const g of grantors ?? []) {
+    const result = validateIdentificacion({
+      cedulaORuc: g.cedulaORuc,
+      esPasaporte: g.es_pasaporte,
+      pasaporte: g.pasaporte,
+    });
+    if (!result.valid) throw new BadRequestException(result.error);
+  }
+
+  for (const b of beneficiaries ?? []) {
+    const result = validateIdentificacion({
+      cedulaORuc: b.cedulaORuc,
+      esPasaporte: b.es_pasaporte,
+      pasaporte: b.pasaporte,
+    });
+    if (!result.valid) throw new BadRequestException(result.error);
+  }
+}
 
 @Injectable()
 export class ArchivesService {
@@ -87,6 +126,9 @@ export class ArchivesService {
     if (existing)
       throw new BadRequestException(`El código "${dto.code}" ya está en uso`);
 
+    // Validate identification for all participants before any DB write
+    validateParticipants(dto.grantors ?? [], dto.beneficiaries ?? []);
+
     const archive = await this.prisma.archive.create({
       data: {
         code: dto.code,
@@ -95,10 +137,10 @@ export class ArchivesService {
         documentDate: dto.documentDate ? new Date(dto.documentDate) : undefined,
         createdById: userId,
         grantors: {
-          create: dto.grantors,
+          create: (dto.grantors ?? []).map(mapParticipant),
         },
         beneficiaries: {
-          create: dto.beneficiaries,
+          create: (dto.beneficiaries ?? []).map(mapParticipant),
         },
       },
       include: ARCHIVE_INCLUDE,
@@ -128,6 +170,11 @@ export class ArchivesService {
         throw new BadRequestException(`El código "${dto.code}" ya está en uso`);
     }
 
+    // Validate identification for updated participants
+    if (dto.grantors !== undefined || dto.beneficiaries !== undefined) {
+      validateParticipants(dto.grantors ?? [], dto.beneficiaries ?? []);
+    }
+
     const { grantors, beneficiaries, ...archiveData } = dto;
 
     await this.prisma.$transaction(async (tx) => {
@@ -135,7 +182,7 @@ export class ArchivesService {
         await tx.grantor.deleteMany({ where: { archiveId: id } });
         if (grantors.length) {
           await tx.grantor.createMany({
-            data: grantors.map((g) => ({ ...g, archiveId: id })),
+            data: grantors.map((g) => ({ ...mapParticipant(g), archiveId: id })),
           });
         }
       }
@@ -144,7 +191,7 @@ export class ArchivesService {
         await tx.beneficiary.deleteMany({ where: { archiveId: id } });
         if (beneficiaries.length) {
           await tx.beneficiary.createMany({
-            data: beneficiaries.map((b) => ({ ...b, archiveId: id })),
+            data: beneficiaries.map((b) => ({ ...mapParticipant(b), archiveId: id })),
           });
         }
       }

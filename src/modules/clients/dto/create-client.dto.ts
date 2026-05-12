@@ -1,11 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
   IsArray,
+  IsBoolean,
   IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
-  MinLength,
+  ValidateIf,
   ValidateNested,
 } from "class-validator";
 import { Type } from "class-transformer";
@@ -18,14 +19,30 @@ export class CreateClientDto {
   nombresCompletos: string;
 
   @ApiPropertyOptional({
-    example: "1712345678",
-    description: "Cédula (10 dígitos) o RUC (13 dígitos)",
+    example: false,
+    description: "true = identificar con pasaporte; false/omitido = cédula o RUC",
   })
   @IsOptional()
+  @IsBoolean()
+  es_pasaporte?: boolean;
+
+  @ApiPropertyOptional({
+    example: "1712345678",
+    description: "Cédula (10 dígitos) o RUC (13 dígitos). Ignorado si es_pasaporte=true",
+  })
+  @ValidateIf((o) => !o.es_pasaporte)
+  @IsOptional()
   @IsString()
-  @MinLength(10)
-  @MaxLength(13)
   cedulaORuc?: string;
+
+  @ApiPropertyOptional({
+    example: "AB123456",
+    description: "Número de pasaporte (alfanumérico, 5–20 caracteres). Requerido si es_pasaporte=true",
+  })
+  @ValidateIf((o) => o.es_pasaporte === true)
+  @IsNotEmpty({ message: "El número de pasaporte es requerido cuando es_pasaporte es true" })
+  @IsString()
+  pasaporte?: string;
 
   @ApiPropertyOptional({ example: "Ecuatoriana" })
   @IsOptional()

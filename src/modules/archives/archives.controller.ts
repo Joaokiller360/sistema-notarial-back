@@ -18,6 +18,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
+
 import { FileInterceptor } from "@nestjs/platform-express";
 import {
   ApiBearerAuth,
@@ -124,13 +125,28 @@ export class ArchivesController {
 
   @Delete(":id")
   @RequirePermissions("archives:delete")
-  @ApiOperation({ summary: "Eliminar archivo notarial (soft delete)" })
+  @ApiOperation({
+    summary: "Eliminar archivo notarial (soft delete)",
+    description:
+      "Requiere confirmar_eliminacion=true en el body o query param como segunda capa de seguridad.",
+  })
   remove(
     @Param("id", ParseUUIDPipe) id: string,
+    @Body("confirmar_eliminacion") confirmBody: boolean | undefined,
+    @Query("confirmar_eliminacion") confirmQuery: string | undefined,
     @CurrentUser() user: JwtPayload,
     @Req() req: Request,
   ) {
-    const ip = req.ip || req.socket.remoteAddress || "";
+    const confirmed = confirmBody === true || confirmQuery === "true";
+    if (!confirmed) {
+      throw new BadRequestException({
+        success: false,
+        codigo: "CONFIRMACION_REQUERIDA",
+        mensaje: "Debes confirmar la eliminación del archivo antes de proceder",
+        campo: "confirmar_eliminacion",
+      });
+    }
+    const ip = req.ip || (req as any).socket?.remoteAddress || "";
     return this.archivesService.remove(id, user.sub, ip);
   }
 

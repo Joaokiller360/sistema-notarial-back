@@ -19,15 +19,21 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const status = exception.getStatus();
     const res = exception.getResponse();
 
+    const resObj = typeof res === "object" ? (res as Record<string, any>) : {};
+
     const errorResponse = {
+      success: false,
       statusCode: status,
       timestamp: new Date().toISOString(),
       path: request.url,
       method: request.method,
+      // Support both our business error format (mensaje) and NestJS default (message)
       message:
         typeof res === "string"
           ? res
-          : (res as any)?.message || exception.message,
+          : resObj.mensaje ?? resObj.message ?? exception.message,
+      ...(resObj.codigo !== undefined && { codigo: resObj.codigo }),
+      ...(resObj.campo !== undefined && { campo: resObj.campo }),
       ...(process.env.NODE_ENV === "development" && { stack: exception.stack }),
     };
 

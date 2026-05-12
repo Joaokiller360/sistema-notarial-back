@@ -52,7 +52,7 @@ const ROLE_PERMISSIONS: Record<RoleType, string[]> = {
     'settings:read', 'settings:update',
   ],
   NOTARIO: [
-    'users:create', 'users:read', 'users:reset-password',
+    'users:create', 'users:read', 'users:update', 'users:delete', 'users:reset-password',
     'roles:read', 'roles:assign',
     'permissions:read', 'permissions:grant',
     'archives:create', 'archives:read', 'archives:update',

@@ -23,6 +23,8 @@ import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
+import { ProtectSuperAdminGuard } from "../../common/guards/protect-super-admin.guard";
+import { NotarioRestrictionGuard } from "../../common/guards/notario-restriction.guard";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
 import {
   CurrentUser,
@@ -69,6 +71,8 @@ export class UsersController {
 
   @Patch(":id")
   @RequirePermissions("users:update")
+  // Blocks NOTARIO from modifying a Super Admin account
+  @UseGuards(NotarioRestrictionGuard)
   @ApiOperation({ summary: "Actualizar usuario" })
   update(
     @Param("id", ParseUUIDPipe) id: string,
@@ -82,6 +86,8 @@ export class UsersController {
 
   @Delete(":id")
   @RequirePermissions("users:delete")
+  // Blocks ANY role from deleting a Super Admin; also blocks NOTARIO specifically
+  @UseGuards(ProtectSuperAdminGuard, NotarioRestrictionGuard)
   @ApiOperation({ summary: "Eliminar usuario (soft delete)" })
   remove(
     @Param("id", ParseUUIDPipe) id: string,
