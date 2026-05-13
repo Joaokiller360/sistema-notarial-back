@@ -3,6 +3,7 @@ import {
   Controller,
   HttpCode,
   HttpStatus,
+  Patch,
   Post,
   Req,
   UseGuards,
@@ -12,6 +13,7 @@ import { Request } from "express";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
 import { ChangePasswordDto, ResetPasswordDto } from "./dto/change-password.dto";
+import { UpdateProfileDto } from "./dto/update-profile.dto";
 import {
   CurrentUser,
   JwtPayload,
@@ -59,6 +61,20 @@ export class AuthController {
   ) {
     const ip = req.ip || req.socket.remoteAddress || "";
     return this.authService.logout(user.sub, body.refreshToken, ip);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Patch("profile")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Actualizar nombre y apellido del usuario autenticado" })
+  updateProfile(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: UpdateProfileDto,
+    @Req() req: Request,
+  ) {
+    const ip = req.ip || req.socket.remoteAddress || "";
+    return this.authService.updateProfile(user.sub, dto, ip);
   }
 
   @UseGuards(JwtAuthGuard)

@@ -8,8 +8,19 @@ import {
   IsString,
   IsUUID,
   Matches,
+  MaxLength,
   MinLength,
 } from "class-validator";
+import { Transform } from "class-transformer";
+
+function sanitizeName({ value }: { value: unknown }): unknown {
+  if (typeof value !== "string") return value;
+  return value
+    .replace(/<[^>]*>/g, "")
+    .replace(/[<>"';&#\/\\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 export class CreateUserDto {
   @ApiProperty({ example: "juan.perez@notaria.com" })
@@ -18,15 +29,25 @@ export class CreateUserDto {
   email: string;
 
   @ApiProperty({ example: "Juan" })
+  @Transform(sanitizeName)
   @IsString()
   @IsNotEmpty()
   @MinLength(2)
+  @MaxLength(60, { message: "Máximo 60 caracteres permitidos" })
+  @Matches(/^[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s'\-]+$/, {
+    message: "Solo se permiten letras, tildes, espacios y guiones",
+  })
   firstName: string;
 
   @ApiProperty({ example: "Pérez" })
+  @Transform(sanitizeName)
   @IsString()
   @IsNotEmpty()
   @MinLength(2)
+  @MaxLength(60, { message: "Máximo 60 caracteres permitidos" })
+  @Matches(/^[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s'\-]+$/, {
+    message: "Solo se permiten letras, tildes, espacios y guiones",
+  })
   lastName: string;
 
   @ApiProperty({ example: "Seguro123!" })

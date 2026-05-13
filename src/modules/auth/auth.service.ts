@@ -15,6 +15,7 @@ import { LogsService } from "../logs/logs.service";
 import { LoginDto } from "./dto/login.dto";
 import { ChangePasswordDto, ResetPasswordDto } from "./dto/change-password.dto";
 import { LoginResponseDto } from "./dto/auth-response.dto";
+import { UpdateProfileDto } from "./dto/update-profile.dto";
 
 @Injectable()
 export class AuthService {
@@ -245,6 +246,37 @@ export class AuthService {
     });
 
     return { temporaryPassword: tempPassword };
+  }
+
+  // ─── UPDATE PROFILE ──────────────────────────────────────────────────────────
+
+  async updateProfile(
+    userId: string,
+    dto: UpdateProfileDto,
+    ip: string,
+  ): Promise<{ id: string; email: string; firstName: string; lastName: string }> {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+    });
+    if (!user) throw new NotFoundException("Usuario no encontrado");
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(dto.firstName !== undefined && { firstName: dto.firstName }),
+        ...(dto.lastName !== undefined && { lastName: dto.lastName }),
+      },
+      select: { id: true, email: true, firstName: true, lastName: true },
+    });
+
+    await this.logs.log({
+      userId,
+      action: "UPDATE_PROFILE",
+      resource: "auth",
+      ip,
+    });
+
+    return updated;
   }
 
   // ─── HELPERS ─────────────────────────────────────────────────────────────────
