@@ -6,7 +6,8 @@
       "Bash(npm run *)",
       "Bash(npx tsc *)",
       "Bash(git *)",
-      "Bash(npm list *)"
+      "Bash(npm list *)",
+      "Bash(xargs cat)"
     ]
   }
 }

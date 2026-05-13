@@ -1,8 +1,12 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { join } from "path";
+import { PDFDocument } from "pdf-lib";
 import { PrismaService } from "../../prisma/prisma.service";
 import { LogsService } from "../logs/logs.service";
 import {
@@ -64,6 +68,8 @@ function validateParticipants(
 
 @Injectable()
 export class ArchivesService {
+  private readonly logger = new Logger(ArchivesService.name);
+
   constructor(
     private prisma: PrismaService,
     private logs: LogsService,
@@ -258,5 +264,78 @@ export class ArchivesService {
       ip,
     });
     return updated;
+  }
+
+  async generatePdf(
+    id: string,
+    files: Express.Multer.File[],
+    userId: string,
+    ip: string,
+  ): Promise<{ message: string; pdfPath: string }> {
+    const archive = await this.prisma.archive.findFirst({
+      where: { id, deletedAt: null },
+    });
+    if (!archive) throw new NotFoundException("Archivo no encontrado");
+
+    const pdfDoc = await PDFDocument.create();
+
+    for (const file of files) {
+      const mime = file.mimetype;
+
+      if (mime !== "image/jpeg" && mime !== "image/png") {
+        throw new BadRequestException(
+          `Formato no soportado: ${file.originalname}. Solo se admiten JPG y PNG.`,
+        );
+      }
+
+      let embeddedImage: Awaited<ReturnType<typeof pdfDoc.embedJpg>>;
+      try {
+        embeddedImage =
+          mime === "image/jpeg"
+            ? await pdfDoc.embedJpg(file.buffer)
+            : await pdfDoc.embedPng(file.buffer);
+      } catch {
+        throw new BadRequestException(
+          `No se pudo procesar la imagen: ${file.originalname}. Verifica que no esté corrupta.`,
+        );
+      }
+
+      const page = pdfDoc.addPage([embeddedImage.width, embeddedImage.height]);
+      page.drawImage(embeddedImage, {
+        x: 0,
+        y: 0,
+        width: embeddedImage.width,
+        height: embeddedImage.height,
+      });
+    }
+
+    const pdfBytes = await pdfDoc.save();
+
+    const uploadDest = process.env.UPLOAD_DEST ?? "./uploads";
+    const pdfDir = join(uploadDest, "pdfs");
+    if (!existsSync(pdfDir)) mkdirSync(pdfDir, { recursive: true });
+
+    const filename = `generated_${id}_${Date.now()}.pdf`;
+    const absolutePath = join(pdfDir, filename);
+    const relativePath = `pdfs/${filename}`;
+
+    writeFileSync(absolutePath, pdfBytes);
+
+    await this.prisma.archive.update({
+      where: { id },
+      data: { pdfPath: relativePath, updatedById: userId },
+    });
+
+    await this.logs.log({
+      userId,
+      action: "GENERATE_PDF",
+      resource: "archives",
+      resourceId: id,
+      ip,
+    });
+
+    this.logger.log(`PDF generado para archivo ${id}: ${relativePath}`);
+
+    return { message: "PDF generado correctamente", pdfPath: relativePath };
   }
 }

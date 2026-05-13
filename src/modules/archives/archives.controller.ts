@@ -15,11 +15,12 @@ import {
   Req,
   Res,
   UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
 
-import { FileInterceptor } from "@nestjs/platform-express";
+import { FileInterceptor, FilesInterceptor } from "@nestjs/platform-express";
 import {
   ApiBearerAuth,
   ApiBody,
@@ -188,6 +189,50 @@ export class ArchivesController {
     const s3Key = await this.s3Service.uploadPdf(file.buffer);
     const ip = req.ip || req.socket.remoteAddress || "";
     return this.archivesService.attachPdf(id, s3Key, user.sub, ip);
+  }
+
+  // ─── GENERATE PDF FROM IMAGES ────────────────────────────────────────────────
+
+  @Post(":id/generate-pdf")
+  @RequirePermissions("archives:update")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Generar PDF a partir de imágenes (JPG/PNG)",
+    description:
+      "Combina múltiples imágenes en un PDF respetando el orden del array. Soporta hasta 20 imágenes.",
+  })
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: {
+        images: {
+          type: "array",
+          items: { type: "string", format: "binary" },
+        },
+      },
+    },
+  })
+  @UseInterceptors(
+    FilesInterceptor("images", 5000, { storage: memoryStorage() }),
+  )
+  async generatePdf(
+    @Param("id", ParseUUIDPipe) id: string,
+    @UploadedFiles() files: Express.Multer.File[],
+    @CurrentUser() user: JwtPayload,
+    @Req() req: Request,
+  ) {
+    if (!files || files.length === 0) {
+      throw new BadRequestException("No se proporcionaron imágenes");
+    }
+    const { maxPdfImages } = await this.systemService.getConfig();
+    if (files.length > maxPdfImages) {
+      throw new BadRequestException(
+        `Se permiten máximo ${maxPdfImages} imágenes por PDF`,
+      );
+    }
+    const ip = req.ip || req.socket.remoteAddress || "";
+    return this.archivesService.generatePdf(id, files, user.sub, ip);
   }
 
   // ─── PDF VIEW ────────────────────────────────────────────────────────────────
