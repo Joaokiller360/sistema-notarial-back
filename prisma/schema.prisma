@@ -225,6 +225,19 @@ model Log {
   @@map("logs")
 }
 
+// ─── NOTARIES ─────────────────────────────────────────────────────────────────
+
+model Notary {
+  id                Int      @id @default(autoincrement())
+  notaryName        String   @map("notary_name") @db.VarChar(200)
+  notaryNumber      Int      @unique @map("notary_number")
+  notaryOfficerName String   @map("notary_officer_name") @db.VarChar(200)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("notaries")
+}
+
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
 
 model Setting {

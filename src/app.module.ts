@@ -20,6 +20,7 @@ import { HealthModule } from "./common/health/health.module";
 import { FilesModule } from "./modules/files/files.module";
 import { ClientsModule } from "./modules/clients/clients.module";
 import { SystemModule } from "./modules/system/system.module";
+import { NotariesModule } from "./modules/notaries/notaries.module";
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { SystemModule } from "./modules/system/system.module";
     FilesModule,
     ClientsModule,
     SystemModule,
+    NotariesModule,
   ],
 })
 export class AppModule {}

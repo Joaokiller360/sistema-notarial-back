@@ -1,3 +1,32 @@
+import { BadRequestException } from "@nestjs/common";
+
+/**
+ * Strips dangerous patterns and characters from string inputs.
+ * Throws BadRequestException if injection patterns are detected.
+ */
+export function sanitizeInput(value: string): string {
+  if (typeof value !== "string") return value;
+
+  const dangerousPatterns = [
+    /<script/i,
+    /javascript:/i,
+    /onerror\s*=/i,
+    /onload\s*=/i,
+    /alert\s*\(/i,
+    /eval\s*\(/i,
+    /document\./i,
+    /window\./i,
+  ];
+
+  for (const pattern of dangerousPatterns) {
+    if (pattern.test(value)) {
+      throw new BadRequestException("El valor contiene contenido no permitido");
+    }
+  }
+
+  return value.replace(/[<>"'`&;(){}[\]/\\=%+#$@!*^|]/g, "").trim();
+}
+
 /**
  * Validates an Ecuadorian cédula (10 digits) using the Luhn-like algorithm.
  */
