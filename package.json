@@ -105,6 +105,6 @@
     }
   },
   "prisma": {
-    "seed": "npx ts-node --transpile-only --skip-project prisma/seed.ts"
+    "seed": "node prisma/seed.js"
   }
 }
