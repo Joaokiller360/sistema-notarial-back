@@ -128,7 +128,10 @@ model UserRole {
 
 model Archive {
   id           String      @id @default(uuid())
-  code         String      @unique @db.VarChar(17)
+  // Uniqueness among active rows is enforced by the partial index
+  // "archives_code_unique_active" (WHERE deleted_at IS NULL) created via raw
+  // migration — Prisma does not support partial unique indexes natively.
+  code         String      @db.VarChar(17)
   type         ArchiveType
   observations String?     @db.Text
   documentDate DateTime?   @map("document_date")
@@ -145,7 +148,9 @@ model Archive {
   grantors      Grantor[]
   beneficiaries Beneficiary[]
 
-  @@index([code])
+  // @@index([code]) — replaced by partial index in raw migration
+  //   "archives_code_unique_active" UNIQUE WHERE deleted_at IS NULL
+  //   "archives_code_idx"           WHERE deleted_at IS NULL
   @@index([type])
   @@index([deletedAt])
   @@index([createdAt])
