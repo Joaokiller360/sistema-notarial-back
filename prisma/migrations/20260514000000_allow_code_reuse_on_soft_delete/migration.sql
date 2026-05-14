@@ -8,8 +8,8 @@
 -- (deleted_at IS NULL).  Soft-deleted rows are excluded from both indexes,
 -- so their codes can be reused by new active archives.
 
--- Step 1: drop the global unique constraint
-ALTER TABLE "archives" DROP CONSTRAINT "archives_code_key";
+-- Step 1: drop the global unique index (was created with CREATE UNIQUE INDEX, not ALTER TABLE)
+DROP INDEX IF EXISTS "archives_code_key";
 
 -- Step 2: drop the non-partial performance index on code
 DROP INDEX IF EXISTS "archives_code_idx";
