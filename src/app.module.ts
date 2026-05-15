@@ -24,7 +24,6 @@ import { NotariesModule } from "./modules/notaries/notaries.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { TasksModule } from "./modules/tasks/tasks.module";
 import { NewsModule } from "./modules/news/news.module";
-import { AntivirusModule } from "./common/antivirus/antivirus.module";
 
 @Module({
   imports: [
@@ -68,7 +67,6 @@ import { AntivirusModule } from "./common/antivirus/antivirus.module";
     NotariesModule,
     NotificationsModule,
     TasksModule,
-    AntivirusModule,
     NewsModule,
   ],
 })
