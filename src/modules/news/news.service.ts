@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { S3Service } from "../../common/s3/s3.service";
 import { CreateNewsDto } from "./dto/create-news.dto";
@@ -9,6 +9,13 @@ export class NewsService {
     private prisma: PrismaService,
     private s3: S3Service,
   ) {}
+
+  private async withSignedUrl<T extends { imageUrl: string | null }>(item: T): Promise<T> {
+    if (!item.imageUrl) return item;
+    const key = new URL(item.imageUrl).pathname.replace(/^\//, "");
+    const signedUrl = await this.s3.getSignedUrl(key, 3600);
+    return { ...item, imageUrl: signedUrl };
+  }
 
   async findAll({ page, limit }: { page: number; limit: number }) {
     const skip = (page - 1) * limit;
@@ -21,14 +28,7 @@ export class NewsService {
       this.prisma.news.count(),
     ]);
 
-    const dataWithUrls = await Promise.all(
-      data.map(async (item) => {
-        if (!item.imageUrl) return item;
-        const key = new URL(item.imageUrl).pathname.replace(/^\//, "");
-        const signedUrl = await this.s3.getSignedUrl(key, 3600);
-        return { ...item, imageUrl: signedUrl };
-      }),
-    );
+    const dataWithUrls = await Promise.all(data.map((item) => this.withSignedUrl(item)));
 
     return {
       data: dataWithUrls,
@@ -37,6 +37,12 @@ export class NewsService {
       limit,
       totalPages: Math.ceil(total / limit),
     };
+  }
+
+  async findOne(id: string) {
+    const news = await this.prisma.news.findUnique({ where: { id } });
+    if (!news) throw new NotFoundException("Noticia no encontrada");
+    return this.withSignedUrl(news);
   }
 
   async create(dto: CreateNewsDto, image?: Express.Multer.File) {
@@ -55,5 +61,17 @@ export class NewsService {
     });
 
     return news;
+  }
+
+  async remove(id: string) {
+    const news = await this.prisma.news.findUnique({ where: { id } });
+    if (!news) throw new NotFoundException("Noticia no encontrada");
+
+    if (news.imageUrl) {
+      const key = new URL(news.imageUrl).pathname.replace(/^\//, "");
+      await this.s3.deleteFile(key);
+    }
+
+    await this.prisma.news.delete({ where: { id } });
   }
 }

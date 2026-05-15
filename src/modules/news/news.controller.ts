@@ -1,9 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
+  Param,
+  ParseUUIDPipe,
   PayloadTooLargeException,
   Post,
   Query,
@@ -43,11 +46,23 @@ export class NewsController {
   @ApiOperation({ summary: "Listar noticias paginadas" })
   @ApiQuery({ name: "page", required: false, example: 1 })
   @ApiQuery({ name: "limit", required: false, example: 50 })
-  findAll(
-    @Query("page") page = 1,
-    @Query("limit") limit = 50,
-  ) {
+  findAll(@Query("page") page = 1, @Query("limit") limit = 50) {
     return this.newsService.findAll({ page: +page, limit: +limit });
+  }
+
+  @Get(":id")
+  @ApiOperation({ summary: "Obtener noticia por ID" })
+  findOne(@Param("id", ParseUUIDPipe) id: string) {
+    return this.newsService.findOne(id);
+  }
+
+  @Delete(":id")
+  @UseGuards(RolesGuard)
+  @RequireRoles(RoleType.SUPER_ADMIN)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: "Eliminar noticia (SUPER_ADMIN)" })
+  remove(@Param("id", ParseUUIDPipe) id: string) {
+    return this.newsService.remove(id);
   }
 
   @Post()
