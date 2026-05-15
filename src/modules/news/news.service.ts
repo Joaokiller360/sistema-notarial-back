@@ -21,8 +21,17 @@ export class NewsService {
       this.prisma.news.count(),
     ]);
 
+    const dataWithUrls = await Promise.all(
+      data.map(async (item) => {
+        if (!item.imageUrl) return item;
+        const key = new URL(item.imageUrl).pathname.replace(/^\//, "");
+        const signedUrl = await this.s3.getSignedUrl(key, 3600);
+        return { ...item, imageUrl: signedUrl };
+      }),
+    );
+
     return {
-      data,
+      data: dataWithUrls,
       total,
       page,
       limit,
