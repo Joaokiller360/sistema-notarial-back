@@ -1,11 +1,12 @@
 import {
-  BadRequestException,
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   PayloadTooLargeException,
   Post,
+  Query,
   UnsupportedMediaTypeException,
   UploadedFile,
   UseGuards,
@@ -17,6 +18,7 @@ import {
   ApiBody,
   ApiConsumes,
   ApiOperation,
+  ApiQuery,
   ApiTags,
 } from "@nestjs/swagger";
 import { memoryStorage } from "multer";
@@ -27,18 +29,30 @@ import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { RequireRoles } from "../../common/decorators/roles.decorator";
 
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5 MB
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp"];
 
 @ApiTags("News")
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
-@RequireRoles(RoleType.SUPER_ADMIN, RoleType.NOTARIO)
+@UseGuards(JwtAuthGuard)
 @Controller("news")
 export class NewsController {
   constructor(private readonly newsService: NewsService) {}
 
+  @Get()
+  @ApiOperation({ summary: "Listar noticias paginadas" })
+  @ApiQuery({ name: "page", required: false, example: 1 })
+  @ApiQuery({ name: "limit", required: false, example: 50 })
+  findAll(
+    @Query("page") page = 1,
+    @Query("limit") limit = 50,
+  ) {
+    return this.newsService.findAll({ page: +page, limit: +limit });
+  }
+
   @Post()
+  @UseGuards(RolesGuard)
+  @RequireRoles(RoleType.SUPER_ADMIN, RoleType.NOTARIO)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: "Crear noticia con imagen opcional" })
   @ApiConsumes("multipart/form-data")
@@ -46,7 +60,7 @@ export class NewsController {
   @UseInterceptors(
     FileInterceptor("image", {
       storage: memoryStorage(),
-      limits: { fileSize: 10 * 1024 * 1024 }, // safety ceiling; real check below
+      limits: { fileSize: 10 * 1024 * 1024 },
     }),
   )
   async create(
@@ -60,13 +74,10 @@ export class NewsController {
         );
       }
       if (image.size > MAX_IMAGE_SIZE) {
-        throw new PayloadTooLargeException(
-          "La imagen supera el límite de 5 MB",
-        );
+        throw new PayloadTooLargeException("La imagen supera el límite de 5 MB");
       }
     }
 
-    const news = await this.newsService.create(dto, image);
-    return { data: news };
+    return this.newsService.create(dto, image);
   }
 }

@@ -10,6 +10,26 @@ export class NewsService {
     private s3: S3Service,
   ) {}
 
+  async findAll({ page, limit }: { page: number; limit: number }) {
+    const skip = (page - 1) * limit;
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.news.findMany({
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      this.prisma.news.count(),
+    ]);
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
   async create(dto: CreateNewsDto, image?: Express.Multer.File) {
     let imageUrl: string | null = null;
 
