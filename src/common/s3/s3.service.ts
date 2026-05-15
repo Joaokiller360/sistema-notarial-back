@@ -61,6 +61,29 @@ export class S3Service {
     return getSignedUrl(this.client, command, { expiresIn });
   }
 
+  async uploadImage(buffer: Buffer, mimeType: string): Promise<string> {
+    const ext = ({ "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" } as Record<string, string>)[mimeType] ?? "bin";
+    const key = `news/${uuidv4()}.${ext}`;
+    try {
+      await this.client.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Body: buffer,
+          ContentType: mimeType,
+        }),
+      );
+    } catch (err) {
+      throw new InternalServerErrorException(
+        "Error al subir imagen a S3: " + (err as Error).message,
+      );
+    }
+    const baseUrl =
+      process.env.S3_BASE_URL ||
+      `https://${this.bucket}.s3.${process.env.AWS_REGION || "us-east-1"}.amazonaws.com`;
+    return `${baseUrl}/${key}`;
+  }
+
   async deleteFile(key: string): Promise<void> {
     await this.client.send(
       new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),

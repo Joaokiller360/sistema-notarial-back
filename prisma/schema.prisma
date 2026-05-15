@@ -273,6 +273,20 @@ model Setting {
   @@map("settings")
 }
 
+// ─── NEWS ─────────────────────────────────────────────────────────────────────
+
+model News {
+  id          String   @id @default(uuid())
+  title       String   @db.VarChar(200)
+  description String   @db.Text
+  imageUrl    String?  @map("image_url") @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([createdAt])
+  @@map("news")
+}
+
 // ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
 
 model Notification {

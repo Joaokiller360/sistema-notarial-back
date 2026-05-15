@@ -23,6 +23,8 @@ import { SystemModule } from "./modules/system/system.module";
 import { NotariesModule } from "./modules/notaries/notaries.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { TasksModule } from "./modules/tasks/tasks.module";
+import { NewsModule } from "./modules/news/news.module";
+import { AntivirusModule } from "./common/antivirus/antivirus.module";
 
 @Module({
   imports: [
@@ -66,6 +68,8 @@ import { TasksModule } from "./modules/tasks/tasks.module";
     NotariesModule,
     NotificationsModule,
     TasksModule,
+    AntivirusModule,
+    NewsModule,
   ],
 })
 export class AppModule {}
