@@ -21,6 +21,8 @@ import { FilesModule } from "./modules/files/files.module";
 import { ClientsModule } from "./modules/clients/clients.module";
 import { SystemModule } from "./modules/system/system.module";
 import { NotariesModule } from "./modules/notaries/notaries.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
+import { TasksModule } from "./modules/tasks/tasks.module";
 
 @Module({
   imports: [
@@ -62,6 +64,8 @@ import { NotariesModule } from "./modules/notaries/notaries.module";
     ClientsModule,
     SystemModule,
     NotariesModule,
+    NotificationsModule,
+    TasksModule,
   ],
 })
 export class AppModule {}

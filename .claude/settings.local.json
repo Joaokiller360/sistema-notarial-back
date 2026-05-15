@@ -11,7 +11,10 @@
       "Bash(curl -s http://localhost:3000/archives)",
       "Bash(PGPASSWORD=Sanandres00 psql *)",
       "Bash(curl -s -X POST http://localhost:8000/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@notaria.com\",\"password\":\"Admin123!\"}')",
-      "Bash(curl -s -X POST https://developer.joaobarres.dev/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@notaria.com\",\"password\":\"Admin123!\"}')"
+      "Bash(curl -s -X POST https://developer.joaobarres.dev/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@notaria.com\",\"password\":\"Admin123!\"}')",
+      "Bash(mv ~/.claude/skills/token-optimizer ~/.claude/skills/token-optimizer.local)",
+      "Bash(ln -s ~/.claude/token-optimizer/skills/token-optimizer ~/.claude/skills/token-optimizer)",
+      "Read(//Users/joaobarres/.claude/skills/**)"
     ]
   }
 }
