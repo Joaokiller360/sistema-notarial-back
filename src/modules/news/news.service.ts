@@ -47,9 +47,20 @@ export class NewsService {
 
   async create(dto: CreateNewsDto, image?: Express.Multer.File) {
     let imageUrl: string | null = null;
+    let imageMetadata: {
+      rotated: boolean;
+      original_orientation: "landscape" | "portrait";
+      final_dimensions: { width: number; height: number };
+    } | null = null;
 
     if (image) {
-      imageUrl = await this.s3.uploadImage(image.buffer, image.mimetype);
+      const result = await this.s3.uploadImage(image.buffer, image.mimetype);
+      imageUrl = result.url;
+      imageMetadata = {
+        rotated: result.rotated,
+        original_orientation: result.original_orientation,
+        final_dimensions: result.final_dimensions,
+      };
     }
 
     const news = await this.prisma.news.create({
@@ -60,7 +71,10 @@ export class NewsService {
       },
     });
 
-    return news;
+    return {
+      ...news,
+      ...(imageMetadata ?? {}),
+    };
   }
 
   async remove(id: string) {
