@@ -5,6 +5,7 @@
  * Rules:
  *   es_pasaporte=true  → validates pasaporte field only, ignores cedulaORuc
  *   es_pasaporte=false → validates cedulaORuc by length: 10=cédula, 13=RUC
+ *   NA values          → bypass validation (NA00000000 fixed, or NA+8random digits)
  */
 
 export interface IdentificationError {
@@ -96,6 +97,9 @@ export function validateIdentificacion(options: {
   // No cedulaORuc and not passport — skip (DTO required validators handle missing values)
   if (!cedulaORuc) return { valid: true };
 
+  // NA marker — not a real ID, skip validation
+  if (isNaCedulaORuc(cedulaORuc)) return { valid: true };
+
   if (cedulaORuc.length === 10) return validateCedulaFormat(cedulaORuc);
   if (cedulaORuc.length === 13) return validateRucFormat(cedulaORuc);
 
@@ -126,4 +130,15 @@ export function validateIdentificacion(options: {
       campo: 'cedula',
     },
   };
+}
+
+/** Returns true if value is a NA placeholder (not a real identification). */
+export function isNaCedulaORuc(value: string): boolean {
+  return value === 'NA00000000' || /^NA\d{8}$/.test(value);
+}
+
+/** Generates a unique NA cedulaORuc for records where identification does not apply. */
+export function generateNaCedulaORuc(): string {
+  const digits = Math.floor(10000000 + Math.random() * 90000000).toString();
+  return `NA${digits}`;
 }
