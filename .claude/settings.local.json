@@ -15,7 +15,8 @@
       "Bash(mv ~/.claude/skills/token-optimizer ~/.claude/skills/token-optimizer.local)",
       "Bash(ln -s ~/.claude/token-optimizer/skills/token-optimizer ~/.claude/skills/token-optimizer)",
       "Read(//Users/joaobarres/.claude/skills/**)",
-      "Bash(npm uninstall *)"
+      "Bash(npm uninstall *)",
+      "Bash(xargs ls -la)"
     ]
   }
 }
