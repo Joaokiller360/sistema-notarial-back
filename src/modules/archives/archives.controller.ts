@@ -29,7 +29,7 @@ import {
   ApiQuery,
   ApiTags,
 } from "@nestjs/swagger";
-import { Throttle } from "@nestjs/throttler";
+import { SkipThrottle, Throttle } from "@nestjs/throttler";
 import { Request, Response } from "express";
 import { memoryStorage } from "multer";
 import { ArchivesService } from "./archives.service";
@@ -126,6 +126,7 @@ export class ArchivesController {
 
   @Get()
   @RequirePermissions("archives:read")
+  @SkipThrottle()
   @ApiOperation({ summary: "Listar archivos notariales" })
   @ApiQuery({ name: "search", required: false })
   @ApiQuery({ name: "type", required: false, enum: ArchiveType })
@@ -144,6 +145,7 @@ export class ArchivesController {
 
   @Get(":id")
   @RequirePermissions("archives:read")
+  @SkipThrottle()
   @ApiOperation({ summary: "Obtener archivo notarial por ID" })
   findOne(@Param("id", ParseUUIDPipe) id: string) {
     return this.archivesService.findOne(id);

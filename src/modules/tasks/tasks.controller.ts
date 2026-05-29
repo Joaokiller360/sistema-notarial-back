@@ -18,6 +18,7 @@ import {
   ApiQuery,
   ApiTags,
 } from "@nestjs/swagger";
+import { SkipThrottle } from "@nestjs/throttler";
 import { RoleType } from "@prisma/client";
 import { TasksService } from "./tasks.service";
 import { CreateTaskDto, TaskPriority } from "./dto/create-task.dto";
@@ -48,6 +49,7 @@ export class TasksController {
   }
 
   @Get("received")
+  @SkipThrottle()
   @ApiOperation({ summary: "Tareas recibidas por el usuario autenticado" })
   @ApiQuery({ name: "page", required: false })
   @ApiQuery({ name: "limit", required: false })
@@ -67,6 +69,7 @@ export class TasksController {
   }
 
   @Get("assigned")
+  @SkipThrottle()
   @UseGuards(RolesGuard)
   @RequireRoles(RoleType.SUPER_ADMIN, RoleType.NOTARIO)
   @ApiOperation({ summary: "Tareas asignadas por el usuario autenticado" })

@@ -1,8 +1,17 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
+'use strict';
+
 const { PrismaClient } = require('@prisma/client');
-const bcrypt = require('bcrypt');
+const bcrypt           = require('bcrypt');
+const { Resend }       = require('resend');
+const crypto           = require('crypto');
+const path             = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const prisma = new PrismaClient();
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+// ─── PERMISSIONS ─────────────────────────────────────────────────────────────
 
 const PERMISSIONS = [
   { name: 'users:create',         action: 'create',         resource: 'users',       description: 'Crear usuarios' },
@@ -65,13 +74,62 @@ const INITIAL_SETTINGS = [
   { key: 'max_file_size',  value: '10485760',         label: 'Tamaño máximo de archivo (bytes)' },
 ];
 
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+
+function generateTempPassword(length = 16) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+  return Array.from(crypto.randomBytes(length))
+    .map(b => chars[b % chars.length])
+    .join('');
+}
+
+async function sendCredentials(email, password) {
+  const { error } = await resend.emails.send({
+    from:    process.env.RESEND_FROM_EMAIL,
+    to:      email,
+    subject: 'Notaria Sistema — Credenciales Super Admin',
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;border:1px solid #e2e8f0;border-radius:8px">
+        <h2 style="color:#1a202c;margin-bottom:8px">Bienvenido a Notaria Sistema</h2>
+        <p style="color:#4a5568">Se ha creado tu cuenta como <strong>Super Admin</strong>.</p>
+        <div style="background:#f7fafc;border-radius:6px;padding:16px;margin:24px 0">
+          <p style="margin:0 0 4px;color:#718096;font-size:12px">CORREO</p>
+          <p style="margin:0 0 16px;font-weight:600;color:#2d3748">${email}</p>
+          <p style="margin:0 0 4px;color:#718096;font-size:12px">CONTRASEÑA TEMPORAL</p>
+          <p style="margin:0;font-weight:700;font-size:20px;letter-spacing:2px;color:#2d3748;font-family:monospace">${password}</p>
+        </div>
+        <p style="color:#e53e3e;font-size:13px">⚠️ Cambia esta contraseña inmediatamente después de tu primer inicio de sesión.</p>
+      </div>
+    `,
+  });
+
+  if (error) throw new Error(`Resend error: ${error.message}`);
+}
+
+// ─── SEED ─────────────────────────────────────────────────────────────────────
+
 async function main() {
-  console.log('🌱 Starting database seed...');
+  const email = process.argv[2];
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    console.error('');
+    console.error('  ❌  Uso: node prisma/seed.js <email-super-admin>');
+    console.error('  Ej: node prisma/seed.js admin@notaria.com');
+    console.error('');
+    process.exit(1);
+  }
+
+  console.log('');
+  console.log('🌱  Notaria Sistema — Database Seed');
+  console.log('────────────────────────────────────');
+  console.log('');
+
+  const tempPassword = generateTempPassword();
 
   console.log('  → Seeding permissions...');
   for (const perm of PERMISSIONS) {
     await prisma.permission.upsert({
-      where: { name: perm.name },
+      where:  { name: perm.name },
       update: { description: perm.description },
       create: perm,
     });
@@ -88,7 +146,7 @@ async function main() {
   const roles = {};
   for (const roleDef of roleDefinitions) {
     const role = await prisma.role.upsert({
-      where: { name: roleDef.name },
+      where:  { name: roleDef.name },
       update: {},
       create: roleDef,
     });
@@ -102,7 +160,7 @@ async function main() {
       const permission = await prisma.permission.findUnique({ where: { name: permName } });
       if (!permission) continue;
       await prisma.rolePermission.upsert({
-        where: { roleId_permissionId: { roleId: role.id, permissionId: permission.id } },
+        where:  { roleId_permissionId: { roleId: role.id, permissionId: permission.id } },
         update: {},
         create: { roleId: role.id, permissionId: permission.id },
       });
@@ -110,12 +168,12 @@ async function main() {
   }
 
   console.log('  → Creating super admin user...');
-  const hashedPassword = await bcrypt.hash('Admin123!', 12);
+  const hashedPassword = await bcrypt.hash(tempPassword, 12);
   const superAdmin = await prisma.user.upsert({
-    where: { email: 'admin@notaria.com' },
-    update: {},
+    where:  { email },
+    update: { password: hashedPassword },
     create: {
-      email:     'admin@notaria.com',
+      email,
       password:  hashedPassword,
       firstName: 'Super',
       lastName:  'Admin',
@@ -124,7 +182,7 @@ async function main() {
   });
 
   await prisma.userRole.upsert({
-    where: { userId_roleId: { userId: superAdmin.id, roleId: roles['SUPER_ADMIN'].id } },
+    where:  { userId_roleId: { userId: superAdmin.id, roleId: roles['SUPER_ADMIN'].id } },
     update: {},
     create: { userId: superAdmin.id, roleId: roles['SUPER_ADMIN'].id },
   });
@@ -132,22 +190,28 @@ async function main() {
   console.log('  → Seeding settings...');
   for (const setting of INITIAL_SETTINGS) {
     await prisma.setting.upsert({
-      where: { key: setting.key },
+      where:  { key: setting.key },
       update: {},
       create: setting,
     });
   }
 
-  console.log('✅ Seed completed successfully!');
+  console.log('  → Sending credentials via Resend...');
+  await sendCredentials(email, tempPassword);
+
   console.log('');
-  console.log('  📧 Super Admin: admin@notaria.com');
-  console.log('  🔑 Password:    Admin123!');
-  console.log('  ⚠️  Change the password after first login!');
+  console.log('✅  Seed completado.');
+  console.log('');
+  console.log(`  📧  Super Admin: ${email}`);
+  console.log(`  🔑  Contraseña:  ${tempPassword}`);
+  console.log(`  ✉️   Correo enviado a ${email}`);
+  console.log('  ⚠️   Cambia la contraseña en el primer inicio de sesión.');
+  console.log('');
 }
 
 main()
   .catch((e) => {
-    console.error('❌ Seed failed:', e);
+    console.error('❌ Seed failed:', e.message);
     process.exit(1);
   })
   .finally(async () => {

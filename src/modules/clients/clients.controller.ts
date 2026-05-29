@@ -20,6 +20,7 @@ import {
   ApiResponse,
   ApiTags,
 } from "@nestjs/swagger";
+import { SkipThrottle } from "@nestjs/throttler";
 import { Request } from "express";
 import { ClientsService } from "./clients.service";
 import { BulkCreateClientsDto, CreateClientDto } from "./dto/create-client.dto";
@@ -41,6 +42,7 @@ export class ClientsController {
   constructor(private readonly clientsService: ClientsService) {}
 
   @Get()
+  @SkipThrottle()
   @RequirePermissions("clients:read")
   @ApiOperation({ summary: "Buscar clientes por nombre o cédula/RUC" })
   findAll(@Query() dto: GetClientsDto) {
@@ -48,6 +50,7 @@ export class ClientsController {
   }
 
   @Get(":id")
+  @SkipThrottle()
   @RequirePermissions("clients:read")
   @ApiOperation({ summary: "Obtener cliente por ID" })
   findOne(@Param("id", ParseUUIDPipe) id: string) {

@@ -18,6 +18,7 @@ import {
   ApiQuery,
   ApiTags,
 } from "@nestjs/swagger";
+import { SkipThrottle } from "@nestjs/throttler";
 import { RoleType } from "@prisma/client";
 import { NotificationsService } from "./notifications.service";
 import { CreateNotificationDto, NotificationType } from "./dto/create-notification.dto";
@@ -47,6 +48,7 @@ export class NotificationsController {
   }
 
   @Get("inbox")
+  @SkipThrottle()
   @ApiOperation({ summary: "Bandeja de entrada del usuario autenticado" })
   @ApiQuery({ name: "page", required: false })
   @ApiQuery({ name: "limit", required: false })
@@ -62,6 +64,7 @@ export class NotificationsController {
   }
 
   @Get("sent")
+  @SkipThrottle()
   @UseGuards(RolesGuard)
   @RequireRoles(RoleType.SUPER_ADMIN, RoleType.NOTARIO)
   @ApiOperation({ summary: "Historial de notificaciones enviadas" })

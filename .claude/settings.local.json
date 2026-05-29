@@ -26,7 +26,11 @@
       "Bash(ssh -o ConnectTimeout=5 -o BatchMode=yes joaobarres@207.180.216.55 \"echo connected\")",
       "Bash(curl -si -X GET \"https://developer.joaobarres.dev/\")",
       "Bash(ssh -o ConnectTimeout=5 -i /Users/joaobarres/.ssh/id_ed25519 root@207.180.216.55 \"echo connected && whoami\")",
-      "Bash(ssh -o ConnectTimeout=5 -i /Users/joaobarres/.ssh/id_rsa root@207.180.216.55 \"echo connected && whoami\")"
+      "Bash(ssh -o ConnectTimeout=5 -i /Users/joaobarres/.ssh/id_rsa root@207.180.216.55 \"echo connected && whoami\")",
+      "Bash(sed -n '15,20p' /Users/joaobarres/Documents/WordSpace/Notaria-Sistema/src/modules/tasks/tasks.controller.ts)",
+      "Bash(sed -n '15,20p' /Users/joaobarres/Documents/WordSpace/Notaria-Sistema/src/modules/notifications/notifications.controller.ts)",
+      "Bash(sed -n '13,18p' /Users/joaobarres/Documents/WordSpace/Notaria-Sistema/src/modules/users/users.controller.ts)",
+      "Bash(sed -n '17,22p' /Users/joaobarres/Documents/WordSpace/Notaria-Sistema/src/modules/clients/clients.controller.ts)"
     ]
   }
 }

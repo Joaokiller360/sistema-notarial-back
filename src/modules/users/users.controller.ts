@@ -17,6 +17,7 @@ import {
   ApiQuery,
   ApiTags,
 } from "@nestjs/swagger";
+import { SkipThrottle } from "@nestjs/throttler";
 import { Request } from "express";
 import { UsersService } from "./users.service";
 import { CreateUserDto } from "./dto/create-user.dto";
@@ -40,6 +41,7 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
+  @SkipThrottle()
   @RequirePermissions("users:read")
   @ApiOperation({ summary: "Listar usuarios" })
   @ApiQuery({ name: "search", required: false })
@@ -51,6 +53,7 @@ export class UsersController {
   }
 
   @Get(":id")
+  @SkipThrottle()
   @RequirePermissions("users:read")
   @ApiOperation({ summary: "Obtener usuario por ID" })
   findOne(@Param("id", ParseUUIDPipe) id: string) {

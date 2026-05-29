@@ -27,7 +27,7 @@ import {
   ApiQuery,
   ApiTags,
 } from "@nestjs/swagger";
-import { Throttle } from "@nestjs/throttler";
+import { SkipThrottle, Throttle } from "@nestjs/throttler";
 import { memoryStorage } from "multer";
 import { RoleType } from "@prisma/client";
 import { NewsService } from "./news.service";
@@ -72,6 +72,7 @@ export class NewsController {
   constructor(private readonly newsService: NewsService) {}
 
   @Get()
+  @SkipThrottle()
   @ApiOperation({ summary: "Listar noticias paginadas" })
   @ApiQuery({ name: "page", required: false, example: 1 })
   @ApiQuery({ name: "limit", required: false, example: 20 })
@@ -86,6 +87,7 @@ export class NewsController {
   }
 
   @Get(":id")
+  @SkipThrottle()
   @ApiOperation({ summary: "Obtener noticia por ID" })
   findOne(@Param("id", ParseUUIDPipe) id: string) {
     return this.newsService.findOne(id);
