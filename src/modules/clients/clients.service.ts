@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { LogsService } from "../logs/logs.service";
 import { BulkCreateClientsDto, CreateClientDto } from "./dto/create-client.dto";
+import { UpdateClientDto } from "./dto/update-client.dto";
 import {
   getPrismaSkipTake,
   paginate,
@@ -67,6 +68,62 @@ export class ClientsService {
     });
 
     return client;
+  }
+
+  async findOne(id: string) {
+    const client = await this.prisma.client.findUnique({ where: { id } });
+    if (!client) throw new NotFoundException("Cliente no encontrado");
+    return client;
+  }
+
+  async update(id: string, dto: UpdateClientDto, userId: string, ip: string) {
+    await this.findOne(id);
+
+    const hasIdentificationFields =
+      dto.cedulaORuc !== undefined ||
+      dto.es_pasaporte !== undefined ||
+      dto.pasaporte !== undefined;
+
+    if (hasIdentificationFields) {
+      const validation = validateIdentificacion({
+        cedulaORuc: dto.cedulaORuc,
+        esPasaporte: dto.es_pasaporte,
+        pasaporte: dto.pasaporte,
+      });
+      if (!validation.valid) throw new BadRequestException(validation.error);
+    }
+
+    const data: Record<string, unknown> = {};
+    if (dto.nombresCompletos !== undefined) data.nombresCompletos = dto.nombresCompletos;
+    if (dto.nacionalidad !== undefined) data.nacionalidad = dto.nacionalidad;
+    if (hasIdentificationFields) {
+      data.cedulaORuc = dto.es_pasaporte ? dto.pasaporte : dto.cedulaORuc;
+    }
+
+    const client = await this.prisma.client.update({ where: { id }, data });
+
+    await this.logs.log({
+      userId,
+      action: "UPDATE_CLIENT",
+      resource: "clients",
+      resourceId: id,
+      ip,
+    });
+
+    return client;
+  }
+
+  async remove(id: string, userId: string, ip: string) {
+    await this.findOne(id);
+    await this.prisma.client.delete({ where: { id } });
+
+    await this.logs.log({
+      userId,
+      action: "DELETE_CLIENT",
+      resource: "clients",
+      resourceId: id,
+      ip,
+    });
   }
 
   /**

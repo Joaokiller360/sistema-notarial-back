@@ -1,9 +1,13 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -19,6 +23,7 @@ import {
 import { Request } from "express";
 import { ClientsService } from "./clients.service";
 import { BulkCreateClientsDto, CreateClientDto } from "./dto/create-client.dto";
+import { UpdateClientDto } from "./dto/update-client.dto";
 import { GetClientsDto } from "./dto/get-clients.dto";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
@@ -40,6 +45,39 @@ export class ClientsController {
   @ApiOperation({ summary: "Buscar clientes por nombre o cédula/RUC" })
   findAll(@Query() dto: GetClientsDto) {
     return this.clientsService.findAll(dto.search, dto.page, dto.limit);
+  }
+
+  @Get(":id")
+  @RequirePermissions("clients:read")
+  @ApiOperation({ summary: "Obtener cliente por ID" })
+  findOne(@Param("id", ParseUUIDPipe) id: string) {
+    return this.clientsService.findOne(id);
+  }
+
+  @Patch(":id")
+  @RequirePermissions("clients:update")
+  @ApiOperation({ summary: "Actualizar cliente" })
+  update(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: UpdateClientDto,
+    @CurrentUser() user: JwtPayload,
+    @Req() req: Request,
+  ) {
+    const ip = req.ip || req.socket.remoteAddress || "";
+    return this.clientsService.update(id, dto, user.sub, ip);
+  }
+
+  @Delete(":id")
+  @RequirePermissions("clients:delete")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: "Eliminar cliente" })
+  remove(
+    @Param("id", ParseUUIDPipe) id: string,
+    @CurrentUser() user: JwtPayload,
+    @Req() req: Request,
+  ) {
+    const ip = req.ip || req.socket.remoteAddress || "";
+    return this.clientsService.remove(id, user.sub, ip);
   }
 
   @Post()

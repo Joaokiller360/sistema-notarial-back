@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { S3Service } from "../../common/s3/s3.service";
 import { CreateNewsDto } from "./dto/create-news.dto";
+import { UpdateNewsDto } from "./dto/update-news.dto";
 
 @Injectable()
 export class NewsService {
@@ -67,6 +68,35 @@ export class NewsService {
       ...news,
       ...(imageMetadata ?? {}),
     };
+  }
+
+  async update(id: string, dto: UpdateNewsDto, image?: Express.Multer.File) {
+    const existing = await this.findOne(id);
+
+    let imageUrl = existing.imageUrl;
+
+    if (image) {
+      const result = await this.s3.uploadImage(image.buffer, image.mimetype);
+      imageUrl = result.url;
+
+      // Delete old image from S3 (best-effort)
+      if (existing.imageUrl) {
+        try {
+          const url = new URL(existing.imageUrl);
+          const key = url.pathname.replace(/^\//, "");
+          if (key.startsWith("news/")) await this.s3.deleteFile(key);
+        } catch {
+          // Non-fatal
+        }
+      }
+    }
+
+    const data: Record<string, unknown> = {};
+    if (dto.title !== undefined) data.title = dto.title;
+    if (dto.description !== undefined) data.description = dto.description;
+    if (image) data.imageUrl = imageUrl;
+
+    return this.prisma.news.update({ where: { id }, data });
   }
 
   async remove(id: string) {

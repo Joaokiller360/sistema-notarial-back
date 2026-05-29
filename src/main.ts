@@ -44,7 +44,12 @@ async function bootstrap() {
           scriptSrc: ["'self'"],
           styleSrc: ["'self'"],
           imgSrc: ["'self'", "data:", "https://*.amazonaws.com"],
-          connectSrc: ["'self'"],
+          connectSrc: [
+            "'self'",
+            "https://developer.joaobarres.dev",
+            "https://*.joaobarres.dev",
+            "https://*.amazonaws.com",
+          ],
           fontSrc: ["'self'"],
           objectSrc: ["'none'"],
           frameSrc: ["'none'"],

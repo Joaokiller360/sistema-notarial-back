@@ -9,6 +9,7 @@ import {
   Param,
   ParseIntPipe,
   ParseUUIDPipe,
+  Patch,
   PayloadTooLargeException,
   Post,
   Query,
@@ -31,6 +32,7 @@ import { memoryStorage } from "multer";
 import { RoleType } from "@prisma/client";
 import { NewsService } from "./news.service";
 import { CreateNewsDto } from "./dto/create-news.dto";
+import { UpdateNewsDto } from "./dto/update-news.dto";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { RequireRoles } from "../../common/decorators/roles.decorator";
@@ -87,6 +89,44 @@ export class NewsController {
   @ApiOperation({ summary: "Obtener noticia por ID" })
   findOne(@Param("id", ParseUUIDPipe) id: string) {
     return this.newsService.findOne(id);
+  }
+
+  @Patch(":id")
+  @UseGuards(RolesGuard)
+  @RequireRoles(RoleType.SUPER_ADMIN, RoleType.NOTARIO)
+  @Throttle({ upload: { limit: 5, ttl: 60000 } })
+  @ApiOperation({ summary: "Actualizar noticia con imagen opcional (máx. 5MB)" })
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({ type: UpdateNewsDto })
+  @UseInterceptors(
+    FileInterceptor("image", {
+      storage: memoryStorage(),
+      limits: { fileSize: MAX_IMAGE_BYTES, files: 1 },
+    }),
+  )
+  async update(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: UpdateNewsDto,
+    @UploadedFile() image?: Express.Multer.File,
+  ) {
+    if (image) {
+      if (!(ALLOWED_MIME as readonly string[]).includes(image.mimetype)) {
+        throw new UnsupportedMediaTypeException(
+          `Tipo de archivo no permitido. Usa: ${ALLOWED_MIME.join(", ")}`,
+        );
+      }
+      if (image.size > MAX_IMAGE_BYTES) {
+        throw new PayloadTooLargeException(
+          `La imagen supera el límite de ${MAX_IMAGE_BYTES / 1024 / 1024} MB`,
+        );
+      }
+      if (!hasValidImageMagic(image.buffer, image.mimetype)) {
+        throw new BadRequestException(
+          "El contenido del archivo no corresponde al tipo de imagen declarado",
+        );
+      }
+    }
+    return this.newsService.update(id, dto, image);
   }
 
   @Delete(":id")
