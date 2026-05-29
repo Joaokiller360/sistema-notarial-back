@@ -55,4 +55,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD wget -q --spider "http://localhost:${PORT:-8000}/api/v1/health/live" || exit 1
 
-CMD ["node", "dist/src/main"]
+CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && node dist/src/main"]
