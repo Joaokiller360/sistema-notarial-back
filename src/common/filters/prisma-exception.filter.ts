@@ -11,6 +11,7 @@ import { Response, Request } from "express";
 @Catch(Prisma.PrismaClientKnownRequestError)
 export class PrismaExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(PrismaExceptionFilter.name);
+  private readonly isDev = process.env.NODE_ENV !== "production";
 
   catch(exception: Prisma.PrismaClientKnownRequestError, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
@@ -50,7 +51,8 @@ export class PrismaExceptionFilter implements ExceptionFilter {
       path: request.url,
       method: request.method,
       message,
-      prismaCode: exception.code,
+      // Only expose Prisma error code in development — never in production
+      ...(this.isDev && { prismaCode: exception.code }),
     });
   }
 }

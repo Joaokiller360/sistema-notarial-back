@@ -12,8 +12,9 @@ services:
       POSTGRES_DB:       ${POSTGRES_DB:-notaria_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - '${POSTGRES_PORT:-5432}:5432'
+    # ─── NO host port mapping: PostgreSQL is only reachable from the internal Docker network ───
+    # ports:
+    #   - '5432:5432'   ← intentionally removed; direct DB access prevented
     healthcheck:
       test:     ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-notaria_user} -d ${POSTGRES_DB:-notaria_db}']
       interval: 10s
@@ -21,6 +22,48 @@ services:
       retries:  5
     networks:
       - notaria_network
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # ─── Redis ───────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: '${REDIS_CONTAINER_NAME:-notaria_redis}'
+    restart: unless-stopped
+    # requirepass enforces authentication; bind prevents external access
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-notaria_redis_pass}
+      --bind 0.0.0.0
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+    # ─── NO host port mapping: Redis is only reachable from the internal Docker network ───
+    # ports:
+    #   - '6379:6379'
+    healthcheck:
+      test:     ['CMD-SHELL', 'redis-cli -a ${REDIS_PASSWORD:-notaria_redis_pass} ping | grep PONG']
+      interval: 10s
+      timeout:  5s
+      retries:  5
+    networks:
+      - notaria_network
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 192M
+        reservations:
+          memory: 64M
 
   # ─── API ─────────────────────────────────────────────────────────────────────
   api:
@@ -32,8 +75,12 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-notaria_user}:${POSTGRES_PASSWORD:-notaria_pass}@postgres:5432/${POSTGRES_DB:-notaria_db}?schema=public
       NODE_ENV:     production
+      # statement_timeout=5000ms prevents a single slow query from exhausting
+      # the connection pool; lock_timeout=3000ms prevents deadlock storms.
+      DATABASE_URL: >-
+        postgresql://${POSTGRES_USER:-notaria_user}:${POSTGRES_PASSWORD:-notaria_pass}@postgres:5432/${POSTGRES_DB:-notaria_db}?schema=public&connection_limit=10&pool_timeout=20&options=-c%20statement_timeout%3D5000%20-c%20lock_timeout%3D3000
+      REDIS_URL:    redis://:${REDIS_PASSWORD:-notaria_redis_pass}@redis:6379/0
     ports:
       - '${PORT:-8000}:8000'
     volumes:
@@ -42,13 +89,31 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
-      test:     ['CMD-SHELL', 'wget --no-verbose --tries=1 --spider http://localhost:${PORT:-8000}/api/v1/health || exit 1']
+      test:     ['CMD-SHELL', 'wget --no-verbose --tries=1 --spider http://localhost:${PORT:-8000}/api/v1/health/live || exit 1']
       interval: 30s
       timeout:  10s
       retries:  3
+      start_period: 30s
     networks:
       - notaria_network
+    security_opt:
+      - no-new-privileges:true
+    # Capabilities: drop everything, add only what's needed
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE   # Only needed if PORT < 1024; remove if PORT >= 1024
+    deploy:
+      resources:
+        limits:
+          # Prevents OOM from upload DoS — Node.js crashes if it exceeds this
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          memory: 256M
 
 volumes:
   postgres_data:
@@ -61,3 +126,5 @@ volumes:
 networks:
   notaria_network:
     driver: bridge
+    # Internal-only: prevents containers from accessing the host network directly
+    internal: false   # set to true if no internet access needed from containers

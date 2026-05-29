@@ -37,14 +37,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
       ...(process.env.NODE_ENV === "development" && { stack: exception.stack }),
     };
 
+    // Log the path only (strip query params to avoid leaking S3 keys, tokens, etc.)
+    const safePath = request.path ?? request.url.split("?")[0];
     if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
       this.logger.error(
-        `${request.method} ${request.url} → ${status}`,
+        `${request.method} ${safePath} → ${status}`,
         exception.stack,
       );
     } else {
       this.logger.warn(
-        `${request.method} ${request.url} → ${status}: ${errorResponse.message}`,
+        `${request.method} ${safePath} → ${status}: ${errorResponse.message}`,
       );
     }
 

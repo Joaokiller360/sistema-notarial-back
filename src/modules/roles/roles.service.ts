@@ -1,8 +1,10 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { RoleType } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { LogsService } from "../logs/logs.service";
 import { CreateRoleDto } from "./dto/create-role.dto";
@@ -27,6 +29,23 @@ const ROLE_SELECT = {
     },
   },
 };
+
+// Lower index = higher authority
+const ROLE_HIERARCHY = [
+  RoleType.SUPER_ADMIN,
+  RoleType.NOTARIO,
+  RoleType.MATRIZADOR,
+  RoleType.ARCHIVADOR,
+];
+
+function rankOf(roleType: string): number {
+  const idx = ROLE_HIERARCHY.indexOf(roleType as RoleType);
+  return idx === -1 ? ROLE_HIERARCHY.length : idx;
+}
+
+function highestRank(roles: string[]): number {
+  return Math.min(...roles.map(rankOf));
+}
 
 @Injectable()
 export class RolesService {
@@ -166,19 +185,44 @@ export class RolesService {
     userId: string,
     roleId: string,
     requesterId: string,
+    requesterRoles: string[],
     ip: string,
   ) {
+    // Fetch the role to be assigned
+    const role = await this.prisma.role.findFirst({
+      where: { id: roleId, deletedAt: null },
+    });
+    if (!role) throw new NotFoundException("Rol no encontrado");
+
+    // Hierarchy enforcement: requester can only assign roles strictly below their rank
+    // e.g., NOTARIO (rank 1) cannot assign SUPER_ADMIN (rank 0) or NOTARIO (rank 1)
+    const requesterHighestRank = highestRank(requesterRoles);
+    const targetRoleRank = rankOf(role.type);
+
+    if (targetRoleRank <= requesterHighestRank) {
+      throw new ForbiddenException(
+        `No puede asignar el rol "${role.name}" — rango igual o superior al suyo`,
+      );
+    }
+
+    // Verify target user exists and is active
+    const targetUser = await this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+    });
+    if (!targetUser) throw new NotFoundException("Usuario no encontrado");
+
     await this.prisma.userRole.upsert({
       where: { userId_roleId: { userId, roleId } },
       update: {},
       create: { userId, roleId },
     });
+
     await this.logs.log({
       userId: requesterId,
       action: "ASSIGN_ROLE",
       resource: "roles",
       resourceId: roleId,
-      details: { userId },
+      details: { userId, roleName: role.name },
       ip,
     });
     return { message: "Rol asignado correctamente" };
@@ -188,15 +232,33 @@ export class RolesService {
     userId: string,
     roleId: string,
     requesterId: string,
+    requesterRoles: string[],
     ip: string,
   ) {
+    // Fetch the role to be revoked
+    const role = await this.prisma.role.findFirst({
+      where: { id: roleId },
+    });
+    if (!role) throw new NotFoundException("Rol no encontrado");
+
+    // Hierarchy enforcement: same rule as assign — can only revoke roles below your rank
+    const requesterHighestRank = highestRank(requesterRoles);
+    const targetRoleRank = rankOf(role.type);
+
+    if (targetRoleRank <= requesterHighestRank) {
+      throw new ForbiddenException(
+        `No puede revocar el rol "${role.name}" — rango igual o superior al suyo`,
+      );
+    }
+
     await this.prisma.userRole.deleteMany({ where: { userId, roleId } });
+
     await this.logs.log({
       userId: requesterId,
       action: "REVOKE_ROLE",
       resource: "roles",
       resourceId: roleId,
-      details: { userId },
+      details: { userId, roleName: role.name },
       ip,
     });
     return { message: "Rol revocado correctamente" };

@@ -1,5 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsNotEmpty,
@@ -52,8 +54,10 @@ export class CreateClientDto {
 }
 
 export class BulkCreateClientsDto {
-  @ApiProperty({ type: [CreateClientDto] })
+  @ApiProperty({ type: [CreateClientDto], maxItems: 500 })
   @IsArray()
+  @ArrayMinSize(1, { message: "Debe incluir al menos 1 cliente" })
+  @ArrayMaxSize(500, { message: "Máximo 500 clientes por importación" })
   @ValidateNested({ each: true })
   @Type(() => CreateClientDto)
   clients: CreateClientDto[];

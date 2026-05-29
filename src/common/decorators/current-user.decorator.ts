@@ -5,6 +5,7 @@ export interface JwtPayload {
   email: string;
   roles: string[];
   permissions: string[];
+  jti: string;   // JWT ID — required for logout denylist
   iat?: number;
   exp?: number;
 }

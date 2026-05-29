@@ -1,9 +1,10 @@
-import { Injectable, InternalServerErrorException } from "@nestjs/common";
+import { Injectable, InternalServerErrorException, Logger } from "@nestjs/common";
 import {
   S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
   GetObjectCommand,
+  ServerSideEncryption,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { v4 as uuidv4 } from "uuid";
@@ -16,8 +17,12 @@ export interface ImageUploadResult {
   final_dimensions: { width: number; height: number };
 }
 
+// Abort S3 operations that stall longer than this to prevent event-loop blocking
+const S3_TIMEOUT_MS = 30_000;
+
 @Injectable()
 export class S3Service {
+  private readonly logger = new Logger(S3Service.name);
   private client: S3Client;
   private bucket: string;
 
@@ -41,12 +46,16 @@ export class S3Service {
           Key: key,
           Body: buffer,
           ContentType: "application/pdf",
+          // Force download; prevents browsers from rendering PDFs inline
+          ContentDisposition: "attachment",
+          // Encrypt at rest using S3-managed keys
+          ServerSideEncryption: ServerSideEncryption.AES256,
         }),
+        { abortSignal: AbortSignal.timeout(S3_TIMEOUT_MS) },
       );
     } catch (err) {
-      throw new InternalServerErrorException(
-        "Error al subir el PDF a S3: " + (err as Error).message,
-      );
+      this.logger.error("S3 PDF upload failed", err instanceof Error ? err.stack : err);
+      throw new InternalServerErrorException("Error al procesar el archivo PDF");
     }
     return key;
   }
@@ -56,17 +65,82 @@ export class S3Service {
     contentType: string,
     expiresIn = 600,
   ): Promise<string> {
-    const command = new PutObjectCommand({
-      Bucket: this.bucket,
-      Key: key,
-      ContentType: contentType,
-    });
-    return getSignedUrl(this.client, command, { expiresIn });
+    try {
+      const command = new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        ContentType: contentType,
+        ServerSideEncryption: ServerSideEncryption.AES256,
+      });
+      return await getSignedUrl(this.client, command, { expiresIn });
+    } catch (err) {
+      this.logger.error("S3 presigned upload URL generation failed", err instanceof Error ? err.stack : err);
+      throw new InternalServerErrorException("Error al generar URL de carga");
+    }
   }
 
   async getSignedUrl(key: string, expiresIn = 3600): Promise<string> {
-    const command = new GetObjectCommand({ Bucket: this.bucket, Key: key });
-    return getSignedUrl(this.client, command, { expiresIn });
+    try {
+      const command = new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        // Force download; prevents inline execution of PDFs in browser
+        ResponseContentDisposition: "attachment",
+      });
+      return await getSignedUrl(this.client, command, { expiresIn });
+    } catch (err) {
+      this.logger.error("S3 presigned view URL generation failed", err instanceof Error ? err.stack : err);
+      throw new InternalServerErrorException("Error al generar URL de visualización");
+    }
+  }
+
+  async deleteFile(key: string): Promise<void> {
+    try {
+      await this.client.send(
+        new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
+        { abortSignal: AbortSignal.timeout(S3_TIMEOUT_MS) },
+      );
+    } catch (err) {
+      this.logger.error("S3 delete failed", err instanceof Error ? err.stack : err);
+      // Non-critical — log but don't throw (file may already be gone)
+    }
+  }
+
+  async uploadImage(buffer: Buffer, mimeType: string): Promise<ImageUploadResult> {
+    const { buffer: processedBuffer, rotated, original_orientation, final_dimensions } =
+      await this.processImage(buffer, mimeType);
+
+    const ext = (
+      { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" } as Record<string, string>
+    )[mimeType] ?? "bin";
+    const key = `news/${uuidv4()}.${ext}`;
+
+    try {
+      await this.client.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Body: processedBuffer,
+          ContentType: mimeType,
+          ServerSideEncryption: ServerSideEncryption.AES256,
+        }),
+        { abortSignal: AbortSignal.timeout(S3_TIMEOUT_MS) },
+      );
+    } catch (err) {
+      this.logger.error("S3 image upload failed", err instanceof Error ? err.stack : err);
+      throw new InternalServerErrorException("Error al subir la imagen");
+    }
+
+    const baseUrl =
+      process.env.S3_BASE_URL ||
+      `https://${this.bucket}.s3.${process.env.AWS_REGION || "us-east-1"}.amazonaws.com`;
+
+    return {
+      url: `${baseUrl}/${key}`,
+      rotated,
+      original_orientation,
+      final_dimensions,
+    };
   }
 
   private async processImage(
@@ -91,7 +165,6 @@ export class S3Service {
     const original_orientation: "landscape" | "portrait" =
       rawWidth > rawHeight ? "landscape" : "portrait";
 
-    // Auto-apply EXIF orientation and strip it (resets to Normal/1)
     const { data: exifFixed, info: exifInfo } = await sharp(buffer)
       .rotate()
       .toFormat(format)
@@ -103,7 +176,6 @@ export class S3Service {
     let finalHeight = exifInfo.height;
 
     if (finalWidth > finalHeight) {
-      // Still landscape after EXIF fix → rotate 90° clockwise
       const { data: cwFixed, info: cwInfo } = await sharp(exifFixed)
         .rotate(90)
         .toFormat(format)
@@ -120,43 +192,5 @@ export class S3Service {
       original_orientation,
       final_dimensions: { width: finalWidth, height: finalHeight },
     };
-  }
-
-  async uploadImage(buffer: Buffer, mimeType: string): Promise<ImageUploadResult> {
-    const { buffer: processedBuffer, rotated, original_orientation, final_dimensions } =
-      await this.processImage(buffer, mimeType);
-
-    const ext = ({ "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" } as Record<string, string>)[mimeType] ?? "bin";
-    const key = `news/${uuidv4()}.${ext}`;
-    try {
-      await this.client.send(
-        new PutObjectCommand({
-          Bucket: this.bucket,
-          Key: key,
-          Body: processedBuffer,
-          ContentType: mimeType,
-        }),
-      );
-    } catch (err) {
-      throw new InternalServerErrorException(
-        "Error al subir imagen a S3: " + (err as Error).message,
-      );
-    }
-    const baseUrl =
-      process.env.S3_BASE_URL ||
-      `https://${this.bucket}.s3.${process.env.AWS_REGION || "us-east-1"}.amazonaws.com`;
-
-    return {
-      url: `${baseUrl}/${key}`,
-      rotated,
-      original_orientation,
-      final_dimensions,
-    };
-  }
-
-  async deleteFile(key: string): Promise<void> {
-    await this.client.send(
-      new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
-    );
   }
 }

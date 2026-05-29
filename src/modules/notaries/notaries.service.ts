@@ -6,6 +6,7 @@ import {
 import { PrismaService } from "../../prisma/prisma.service";
 import { CreateNotaryDto } from "./dto/create-notary.dto";
 import { UpdateNotaryDto } from "./dto/update-notary.dto";
+import { getPrismaSkipTake, paginate } from "../../common/utils/pagination.util";
 
 @Injectable()
 export class NotariesService {
@@ -24,8 +25,15 @@ export class NotariesService {
     return this.prisma.notary.create({ data: dto });
   }
 
-  findAll() {
-    return this.prisma.notary.findMany({ orderBy: { notaryNumber: "asc" } });
+  async findAll(page = 1, limit = 50) {
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.notary.findMany({
+        orderBy: { notaryNumber: "asc" },
+        ...getPrismaSkipTake(page, limit),
+      }),
+      this.prisma.notary.count(),
+    ]);
+    return paginate(data, total, page, limit);
   }
 
   async findOne(id: number) {

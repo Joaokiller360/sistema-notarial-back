@@ -20,22 +20,64 @@ async function bootstrap() {
   const logger = app.get(WINSTON_MODULE_NEST_PROVIDER);
   const reflector = app.get(Reflector);
 
-  // Use Winston logger for NestJS internal logs
   app.useLogger(logger);
+
+  const isProduction = config.get<string>("app.nodeEnv") === "production";
 
   // ─── API PREFIX ─────────────────────────────────────────────────────────────
   const apiPrefix = config.get<string>("app.apiPrefix") || "api/v1";
   app.setGlobalPrefix(apiPrefix);
 
-  // ─── SECURITY ───────────────────────────────────────────────────────────────
+  // ─── TRUST PROXY (set when behind Nginx / Cloudflare) ───────────────────────
+  // Required for correct IP in rate limiting and logging when behind a reverse proxy
+  if (isProduction) {
+    app.getHttpAdapter().getInstance().set("trust proxy", 1);
+  }
+
+  // ─── SECURITY HEADERS (Helmet) ───────────────────────────────────────────────
   app.use(
     helmet({
-      crossOriginResourcePolicy: { policy: "cross-origin" }, // Allow PDF serving
+      // Content-Security-Policy: strict — blocks XSS, clickjacking, mixed content
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'"],
+          imgSrc: ["'self'", "data:", "https://*.amazonaws.com"],
+          connectSrc: ["'self'"],
+          fontSrc: ["'self'"],
+          objectSrc: ["'none'"],
+          frameSrc: ["'none'"],
+          baseUri: ["'self'"],
+          formAction: ["'self'"],
+          ...(isProduction && { upgradeInsecureRequests: [] }),
+        },
+      },
+      // HSTS: force HTTPS for 1 year
+      strictTransportSecurity: isProduction
+        ? { maxAge: 31_536_000, includeSubDomains: true, preload: true }
+        : false,
+      // Prevent embedding in iframes (clickjacking)
+      frameguard: { action: "deny" },
+      // CORP: same-site (stricter than cross-origin; overridden per-route for S3 redirects)
+      crossOriginResourcePolicy: { policy: "same-site" },
+      crossOriginEmbedderPolicy: false, // Allow S3 presigned redirects
+      referrerPolicy: { policy: "strict-origin-when-cross-origin" },
     }),
   );
-  app.use(compression());
 
-  // CORS
+  // ─── COMPRESSION ────────────────────────────────────────────────────────────
+  // Disabled on auth endpoints (BREACH mitigation) — see filter function
+  app.use(
+    compression({
+      filter: (req, res) => {
+        if (req.path.includes("/auth/")) return false;
+        return compression.filter(req, res);
+      },
+    }),
+  );
+
+  // ─── CORS ───────────────────────────────────────────────────────────────────
   const corsOrigins = config.get<string[]>("app.corsOrigins") || [
     "http://localhost:3000",
   ];
@@ -58,7 +100,8 @@ async function bootstrap() {
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
-      transformOptions: { enableImplicitConversion: true },
+      // Disable implicit type coercion to prevent bypass via type confusion
+      transformOptions: { enableImplicitConversion: false },
     }),
   );
 
@@ -72,8 +115,8 @@ async function bootstrap() {
     new TransformInterceptor(),
   );
 
-  // ─── SWAGGER / OPENAPI ──────────────────────────────────────────────────────
-  if (config.get<string>("app.nodeEnv") !== "production") {
+  // ─── SWAGGER (development + staging only) ───────────────────────────────────
+  if (!isProduction) {
     const swaggerConfig = new DocumentBuilder()
       .setTitle("Notaria Sistema API")
       .setDescription("Sistema de gestión de archivos notariales — API REST")
@@ -106,17 +149,16 @@ async function bootstrap() {
     );
   }
 
-  // ─── STATIC FILES (PDFs) ────────────────────────────────────────────────────
-  const uploadDest = config.get<string>("upload.dest") || "./uploads";
-  const express = require("express");
-  app.use("/uploads", express.static(uploadDest));
+  // ─── NOTE: /uploads static endpoint intentionally removed ───────────────────
+  // PDF files are served via authenticated GET /archives/:id/pdf which generates
+  // a signed S3 URL. No unauthenticated static file access is allowed.
 
   // ─── START ──────────────────────────────────────────────────────────────────
   const port = config.get<number>("app.port") || 3000;
-  await app.listen(port);
+  await app.listen(port, "0.0.0.0");
 
   logger.log(
-    `Application running on: http://localhost:${port}/${apiPrefix}`,
+    `Application running on port ${port} [${config.get("app.nodeEnv")}]`,
     "Bootstrap",
   );
 }

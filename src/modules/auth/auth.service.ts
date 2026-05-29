@@ -9,13 +9,27 @@ import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { RoleType } from "@prisma/client";
 import * as bcrypt from "bcrypt";
+import { createHash, randomBytes } from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import { PrismaService } from "../../prisma/prisma.service";
 import { LogsService } from "../logs/logs.service";
+import { TokenDenylistService } from "../../common/token-denylist/token-denylist.service";
+import { SecurityLoggerService } from "../../common/security/security-logger.service";
 import { LoginDto } from "./dto/login.dto";
 import { ChangePasswordDto, ResetPasswordDto } from "./dto/change-password.dto";
 import { LoginResponseDto } from "./dto/auth-response.dto";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
+
+// Hash a raw token string with SHA-256 before storing in DB.
+// Raw token is never persisted — only the hash is.
+function hashToken(raw: string): string {
+  return createHash("sha256").update(raw).digest("hex");
+}
+
+// A dummy bcrypt hash used when the email does not exist.
+// Forces bcrypt.compare() to run regardless, preventing timing-based user enumeration.
+const DUMMY_HASH =
+  "$2b$12$invalidhashfortimingnormalization000000000000000000000000";
 
 @Injectable()
 export class AuthService {
@@ -24,6 +38,8 @@ export class AuthService {
     private jwt: JwtService,
     private config: ConfigService,
     private logs: LogsService,
+    private denylist: TokenDenylistService,
+    private securityLogger: SecurityLoggerService,
   ) {}
 
   // ─── LOGIN ──────────────────────────────────────────────────────────────────
@@ -46,12 +62,22 @@ export class AuthService {
       },
     });
 
-    if (!user || !user.isActive) {
-      throw new UnauthorizedException("Credenciales inválidas");
-    }
+    // Always run bcrypt to prevent timing-based user enumeration.
+    // If user not found we compare against a dummy hash (same time cost).
+    const passwordMatch = await bcrypt.compare(
+      dto.password,
+      user?.password ?? DUMMY_HASH,
+    );
 
-    const passwordMatch = await bcrypt.compare(dto.password, user.password);
-    if (!passwordMatch) {
+    if (!user || !user.isActive || !passwordMatch) {
+      this.securityLogger.loginFailed(ip, dto.email, !user ? "user_not_found" : !user.isActive ? "user_inactive" : "wrong_password");
+      await this.logs.log({
+        action: "LOGIN_FAILED",
+        resource: "auth",
+        ip,
+        userAgent,
+        details: { email: dto.email },
+      });
       throw new UnauthorizedException("Credenciales inválidas");
     }
 
@@ -92,19 +118,60 @@ export class AuthService {
     };
   }
 
-  // ─── REFRESH ─────────────────────────────────────────────────────────────────
+  // ─── REFRESH — token rotation with replay detection ──────────────────────────
 
   async refreshTokens(
     userId: string,
     refreshToken: string,
     ip: string,
-  ): Promise<{ accessToken: string; expiresIn: number }> {
+  ): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
+    const tokenHash = hashToken(refreshToken);
+
+    // ATOMIC revocation: UPDATE ... WHERE isRevoked = false returns count=1 only
+    // for the first concurrent request. Subsequent requests get count=0 → replay detected.
+    // This eliminates the TOCTOU race between read-then-update patterns.
+    const revoked = await this.prisma.refreshToken.updateMany({
+      where: { token: tokenHash, userId, isRevoked: false },
+      data: { isRevoked: true },
+    });
+
+    if (revoked.count === 0) {
+      // Either token doesn't exist, is already revoked, or a concurrent request just consumed it.
+      // Check if token exists at all to distinguish replay from invalid.
+      const existing = await this.prisma.refreshToken.findFirst({
+        where: { token: tokenHash, userId },
+      });
+
+      if (existing?.isRevoked) {
+        // Token was previously valid but already consumed → replay attack.
+        // Revoke ALL user sessions to force re-authentication.
+        await this.prisma.refreshToken.updateMany({
+          where: { userId },
+          data: { isRevoked: true },
+        });
+        this.securityLogger.replayAttackDetected(userId, ip);
+        await this.logs.log({
+          userId,
+          action: "REPLAY_ATTACK_DETECTED",
+          resource: "auth",
+          ip,
+          details: { message: "All sessions revoked due to token reuse" },
+        });
+        throw new UnauthorizedException(
+          "Sesión comprometida detectada. Inicia sesión nuevamente.",
+        );
+      }
+
+      throw new UnauthorizedException("Refresh token inválido");
+    }
+
+    // Fetch the just-revoked record to get expiry
     const stored = await this.prisma.refreshToken.findFirst({
-      where: { token: refreshToken, userId, isRevoked: false },
+      where: { token: tokenHash, userId },
     });
 
     if (!stored || stored.expiresAt < new Date()) {
-      throw new UnauthorizedException("Refresh token inválido o expirado");
+      throw new UnauthorizedException("Refresh token expirado");
     }
 
     const user = await this.prisma.user.findFirst({
@@ -131,6 +198,14 @@ export class AuthService {
       ),
     ];
 
+    // Issue new access + refresh tokens (keep original expiry for refresh)
+    const newRefreshRaw = uuidv4();
+    const newRefreshHash = hashToken(newRefreshRaw);
+
+    await this.prisma.refreshToken.create({
+      data: { token: newRefreshHash, userId, expiresAt: stored.expiresAt },
+    });
+
     const accessToken = this.generateAccessToken(
       user.id,
       user.email,
@@ -139,7 +214,7 @@ export class AuthService {
     );
     const expiresIn = this.getAccessTokenExpiry();
 
-    return { accessToken, expiresIn };
+    return { accessToken, refreshToken: newRefreshRaw, expiresIn };
   }
 
   // ─── LOGOUT ──────────────────────────────────────────────────────────────────
@@ -147,12 +222,21 @@ export class AuthService {
   async logout(
     userId: string,
     refreshToken: string,
+    jti: string | undefined,
+    exp: number | undefined,
     ip: string,
   ): Promise<void> {
+    const tokenHash = hashToken(refreshToken);
     await this.prisma.refreshToken.updateMany({
-      where: { token: refreshToken, userId },
+      where: { token: tokenHash, userId },
       data: { isRevoked: true },
     });
+
+    // Deny the current access token for its remaining lifetime
+    if (jti && exp) {
+      await this.denylist.deny(jti, exp);
+      this.securityLogger.tokenRevoked(userId, jti);
+    }
 
     await this.logs.log({ userId, action: "LOGOUT", resource: "auth", ip });
   }
@@ -188,6 +272,7 @@ export class AuthService {
     });
     await this.logoutAll(userId);
 
+    this.securityLogger.passwordChanged(userId, ip);
     await this.logs.log({
       userId,
       action: "CHANGE_PASSWORD",
@@ -237,6 +322,7 @@ export class AuthService {
     });
     await this.logoutAll(dto.userId);
 
+    this.securityLogger.passwordReset(requesterId, dto.userId, ip);
     await this.logs.log({
       userId: requesterId,
       action: "RESET_PASSWORD",
@@ -293,7 +379,8 @@ export class AuthService {
       roles,
       permissions,
     );
-    const refreshToken = uuidv4();
+    const refreshRaw = uuidv4();
+    const refreshHash = hashToken(refreshRaw);
     const expiresIn = this.getAccessTokenExpiry();
 
     const refreshExpiration = this.config.get<string>("jwt.refreshExpiration")!;
@@ -301,14 +388,28 @@ export class AuthService {
     expiresAt.setDate(expiresAt.getDate() + this.parseDays(refreshExpiration));
 
     await this.prisma.refreshToken.create({
-      data: { token: refreshToken, userId, expiresAt },
+      data: { token: refreshHash, userId, expiresAt },
     });
 
+    // Purge old revoked+expired tokens for this user (housekeeping)
     await this.prisma.refreshToken.deleteMany({
       where: { userId, isRevoked: true, expiresAt: { lt: new Date() } },
     });
 
-    return { accessToken, refreshToken, expiresIn };
+    // Enforce max 5 active sessions per user
+    const activeSessions = await this.prisma.refreshToken.findMany({
+      where: { userId, isRevoked: false, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: "asc" },
+    });
+    if (activeSessions.length > 5) {
+      const toRevoke = activeSessions.slice(0, activeSessions.length - 5);
+      await this.prisma.refreshToken.updateMany({
+        where: { id: { in: toRevoke.map((t) => t.id) } },
+        data: { isRevoked: true },
+      });
+    }
+
+    return { accessToken, refreshToken: refreshRaw, expiresIn };
   }
 
   private generateAccessToken(
@@ -317,8 +418,9 @@ export class AuthService {
     roles: string[],
     permissions: string[],
   ): string {
+    const jti = uuidv4();
     return this.jwt.sign(
-      { sub: userId, email, roles, permissions },
+      { sub: userId, email, roles, permissions, jti },
       {
         secret: this.config.get<string>("jwt.accessSecret"),
         expiresIn: this.config.get<string>("jwt.accessExpiration") || "15m",
@@ -349,13 +451,13 @@ export class AuthService {
     return 7;
   }
 
+  // Uses crypto.randomBytes — cryptographically secure, unlike Math.random()
   private generateTemporaryPassword(): string {
     const chars =
       "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@$!%*?&";
-    let pass = "";
-    for (let i = 0; i < 10; i++) {
-      pass += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return pass;
+    const bytes = randomBytes(12);
+    return Array.from(bytes)
+      .map((b) => chars[b % chars.length])
+      .join("");
   }
 }

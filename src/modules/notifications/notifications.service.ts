@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { RoleType } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CreateNotificationDto } from "./dto/create-notification.dto";
 import { NotificationQueryDto } from "./dto/notification-query.dto";
@@ -11,16 +12,24 @@ import {
   paginate,
 } from "../../common/utils/pagination.util";
 
+const SENDER_SELECT = { select: { firstName: true, lastName: true } };
+
 @Injectable()
 export class NotificationsService {
   constructor(private prisma: PrismaService) {}
 
-  private async getUserFullName(id: string): Promise<string> {
-    const user = await this.prisma.user.findUnique({
-      where: { id },
-      select: { firstName: true, lastName: true },
+  /**
+   * Batch-fetch user names for a list of IDs in a single query.
+   * Returns a Map<userId, "FirstName LastName">.
+   * Eliminates N+1 query pattern in getInbox/getSent.
+   */
+  private async fetchUserNames(ids: string[]): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, firstName: true, lastName: true },
     });
-    return user ? `${user.firstName} ${user.lastName}` : "Desconocido";
+    return new Map(users.map((u) => [u.id, `${u.firstName} ${u.lastName}`]));
   }
 
   private format(
@@ -43,11 +52,6 @@ export class NotificationsService {
     };
   }
 
-  private async resolveRecipientName(recipientId: string): Promise<string> {
-    if (recipientId === "ALL") return "Todos";
-    return this.getUserFullName(recipientId);
-  }
-
   async create(dto: CreateNotificationDto, senderId: string) {
     if (dto.recipientId !== "ALL") {
       const exists = await this.prisma.user.findFirst({
@@ -65,10 +69,15 @@ export class NotificationsService {
         message: dto.message,
         type: dto.type as any,
       },
-      include: { sender: { select: { firstName: true, lastName: true } } },
+      include: { sender: SENDER_SELECT },
     });
 
-    const recipientName = await this.resolveRecipientName(dto.recipientId);
+    const recipientName =
+      dto.recipientId === "ALL"
+        ? "Todos"
+        : (await this.fetchUserNames([dto.recipientId])).get(dto.recipientId) ??
+          "Desconocido";
+
     return this.format(notification, recipientName);
   }
 
@@ -80,18 +89,23 @@ export class NotificationsService {
     const [data, total] = await this.prisma.$transaction([
       this.prisma.notification.findMany({
         where,
-        include: { sender: { select: { firstName: true, lastName: true } } },
+        include: { sender: SENDER_SELECT },
         orderBy: { sentAt: "desc" },
         ...getPrismaSkipTake(page, limit),
       }),
       this.prisma.notification.count({ where }),
     ]);
 
-    const formatted = await Promise.all(
-      data.map(async (n) => {
-        const recipientName = await this.resolveRecipientName(n.recipientId);
-        return this.format(n, recipientName);
-      }),
+    // Batch fetch all non-ALL recipient names in one query (eliminates N+1)
+    const uniqueRecipientIds = [
+      ...new Set(
+        data.map((n) => n.recipientId).filter((id) => id !== "ALL"),
+      ),
+    ];
+    const nameMap = await this.fetchUserNames(uniqueRecipientIds);
+
+    const formatted = data.map((n) =>
+      this.format(n, n.recipientId === "ALL" ? "Todos" : (nameMap.get(n.recipientId) ?? "Desconocido")),
     );
 
     return paginate(formatted, total, page, limit);
@@ -115,18 +129,23 @@ export class NotificationsService {
     const [data, total] = await this.prisma.$transaction([
       this.prisma.notification.findMany({
         where,
-        include: { sender: { select: { firstName: true, lastName: true } } },
+        include: { sender: SENDER_SELECT },
         orderBy: { sentAt: "desc" },
         ...getPrismaSkipTake(page, limit),
       }),
       this.prisma.notification.count({ where }),
     ]);
 
-    const formatted = await Promise.all(
-      data.map(async (n) => {
-        const recipientName = await this.resolveRecipientName(n.recipientId);
-        return this.format(n, recipientName);
-      }),
+    // Batch fetch all non-ALL recipient names in one query (eliminates N+1)
+    const uniqueRecipientIds = [
+      ...new Set(
+        data.map((n) => n.recipientId).filter((id) => id !== "ALL"),
+      ),
+    ];
+    const nameMap = await this.fetchUserNames(uniqueRecipientIds);
+
+    const formatted = data.map((n) =>
+      this.format(n, n.recipientId === "ALL" ? "Todos" : (nameMap.get(n.recipientId) ?? "Desconocido")),
     );
 
     return paginate(formatted, total, page, limit);
@@ -135,7 +154,7 @@ export class NotificationsService {
   async markRead(id: string, userId: string) {
     const notification = await this.prisma.notification.findUnique({
       where: { id },
-      include: { sender: { select: { firstName: true, lastName: true } } },
+      include: { sender: SENDER_SELECT },
     });
     if (!notification) throw new NotFoundException("Notificación no encontrada");
 
@@ -150,10 +169,17 @@ export class NotificationsService {
     const updated = await this.prisma.notification.update({
       where: { id },
       data: { read: true },
-      include: { sender: { select: { firstName: true, lastName: true } } },
+      include: { sender: SENDER_SELECT },
     });
 
-    const recipientName = await this.resolveRecipientName(updated.recipientId);
+    const nameMap = await this.fetchUserNames(
+      updated.recipientId !== "ALL" ? [updated.recipientId] : [],
+    );
+    const recipientName =
+      updated.recipientId === "ALL"
+        ? "Todos"
+        : (nameMap.get(updated.recipientId) ?? "Desconocido");
+
     return this.format(updated, recipientName);
   }
 
@@ -168,21 +194,34 @@ export class NotificationsService {
     return { updated: result.count };
   }
 
-  async remove(id: string, userId: string) {
+  async remove(id: string, userId: string, userRoles: string[]) {
     const notification = await this.prisma.notification.findUnique({
       where: { id },
     });
     if (!notification) throw new NotFoundException("Notificación no encontrada");
 
-    const canDelete =
-      notification.senderId === userId ||
-      notification.recipientId === userId ||
-      notification.recipientId === "ALL";
+    const isSuperAdmin = userRoles.includes(RoleType.SUPER_ADMIN);
 
-    if (!canDelete) {
-      throw new ForbiddenException(
-        "No tienes permiso para eliminar esta notificación",
-      );
+    if (notification.recipientId === "ALL") {
+      // Broadcast notifications can only be deleted by sender or SUPER_ADMIN.
+      // Any other user "deleting" a broadcast would remove it for everyone.
+      if (notification.senderId !== userId && !isSuperAdmin) {
+        throw new ForbiddenException(
+          "Solo el remitente o un Super Admin puede eliminar notificaciones enviadas a todos",
+        );
+      }
+    } else {
+      // Personal notifications: sender or recipient may delete
+      const canDelete =
+        notification.senderId === userId ||
+        notification.recipientId === userId ||
+        isSuperAdmin;
+
+      if (!canDelete) {
+        throw new ForbiddenException(
+          "No tienes permiso para eliminar esta notificación",
+        );
+      }
     }
 
     await this.prisma.notification.delete({ where: { id } });

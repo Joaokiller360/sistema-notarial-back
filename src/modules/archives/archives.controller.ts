@@ -29,9 +29,9 @@ import {
   ApiQuery,
   ApiTags,
 } from "@nestjs/swagger";
+import { Throttle } from "@nestjs/throttler";
 import { Request, Response } from "express";
 import { memoryStorage } from "multer";
-import { join } from "path";
 import { ArchivesService } from "./archives.service";
 import { ArchiveType, CreateArchiveDto } from "./dto/create-archive.dto";
 import { UpdateArchiveDto } from "./dto/update-archive.dto";
@@ -46,13 +46,72 @@ import { PaginationDto } from "../../common/utils/pagination.util";
 import { S3Service } from "../../common/s3/s3.service";
 import { SystemService } from "../system/system.service";
 
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+
+/** Hard Multer limit for PDF uploads — 25MB. Applied before file reaches memory. */
+const PDF_MULTER_LIMIT_BYTES = 25 * 1024 * 1024;
+
+/** Hard Multer limit per image for PDF generation — 5MB each. */
+const IMAGE_MULTER_LIMIT_BYTES = 5 * 1024 * 1024;
+
+/** Hard Multer cap on number of images per PDF generation request. */
+const IMAGE_MULTER_MAX_COUNT = 20;
+
+// ─── FILTERS ─────────────────────────────────────────────────────────────────
+
+/**
+ * Multer fileFilter for PDF uploads.
+ * Checks the client-supplied Content-Type as a first gate.
+ * Magic bytes are validated in the handler after the buffer is available.
+ */
 const pdfFilter = (req: any, file: Express.Multer.File, cb: any) => {
   if (file.mimetype !== "application/pdf") {
-    cb(new Error("Solo se permiten archivos PDF"), false);
-  } else {
-    cb(null, true);
+    return cb(new BadRequestException("Solo se permiten archivos PDF"), false);
   }
+  cb(null, true);
 };
+
+/**
+ * Multer fileFilter for images used in PDF generation.
+ * Allows only image/jpeg and image/png.
+ */
+const imageFilter = (req: any, file: Express.Multer.File, cb: any) => {
+  if (!["image/jpeg", "image/png"].includes(file.mimetype)) {
+    return cb(
+      new BadRequestException(
+        `Formato no soportado: ${file.originalname}. Solo JPG y PNG.`,
+      ),
+      false,
+    );
+  }
+  cb(null, true);
+};
+
+// ─── MAGIC BYTES HELPERS ──────────────────────────────────────────────────────
+
+function isPdf(buf: Buffer): boolean {
+  return buf.length >= 4 && buf.slice(0, 4).toString("binary") === "%PDF";
+}
+
+function isJpeg(buf: Buffer): boolean {
+  return buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+}
+
+function isPng(buf: Buffer): boolean {
+  return (
+    buf.length >= 8 &&
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47 &&
+    buf[4] === 0x0d &&
+    buf[5] === 0x0a &&
+    buf[6] === 0x1a &&
+    buf[7] === 0x0a
+  );
+}
+
+// ─── CONTROLLER ───────────────────────────────────────────────────────────────
 
 @ApiTags("Archives")
 @ApiBearerAuth()
@@ -68,17 +127,8 @@ export class ArchivesController {
   @Get()
   @RequirePermissions("archives:read")
   @ApiOperation({ summary: "Listar archivos notariales" })
-  @ApiQuery({
-    name: "search",
-    required: false,
-    description: "Buscar por código, otorgante, beneficiario, observaciones",
-  })
-  @ApiQuery({
-    name: "type",
-    required: false,
-    enum: ArchiveType,
-    description: "P=Protocolos, D=Diligencias, A=Arrendamientos, C=Certificaciones, O=Otros",
-  })
+  @ApiQuery({ name: "search", required: false })
+  @ApiQuery({ name: "type", required: false, enum: ArchiveType })
   findAll(
     @Query() pagination: PaginationDto,
     @Query("search") search?: string,
@@ -126,11 +176,7 @@ export class ArchivesController {
 
   @Delete(":id")
   @RequirePermissions("archives:delete")
-  @ApiOperation({
-    summary: "Eliminar archivo notarial (soft delete)",
-    description:
-      "Requiere confirmar_eliminacion=true en el body o query param como segunda capa de seguridad.",
-  })
+  @ApiOperation({ summary: "Eliminar archivo notarial (soft delete)" })
   remove(
     @Param("id", ParseUUIDPipe) id: string,
     @Body("confirmar_eliminacion") confirmBody: boolean | undefined,
@@ -156,6 +202,8 @@ export class ArchivesController {
   @Post(":id/upload-pdf")
   @RequirePermissions("archives:update")
   @HttpCode(HttpStatus.OK)
+  // 10 uploads/minute per IP — prevents DoS via repeated large uploads
+  @Throttle({ upload: { limit: 10, ttl: 60000 } })
   @ApiOperation({ summary: "Subir PDF al archivo notarial (almacenado en S3)" })
   @ApiConsumes("multipart/form-data")
   @ApiBody({
@@ -169,7 +217,9 @@ export class ArchivesController {
       storage: memoryStorage(),
       fileFilter: pdfFilter,
       limits: {
-        fileSize: 500 * 1024 * 1024,
+        // Hard cap: Multer rejects before full buffer loads in memory
+        fileSize: PDF_MULTER_LIMIT_BYTES,
+        files: 1,
       },
     }),
   )
@@ -180,12 +230,22 @@ export class ArchivesController {
     @Req() req: Request,
   ) {
     if (!file) throw new BadRequestException("No se proporcionó archivo PDF");
+
+    // Magic bytes: verify actual file content is PDF (defeats MIME spoofing)
+    if (!isPdf(file.buffer)) {
+      throw new BadRequestException(
+        "El contenido del archivo no corresponde a un PDF válido",
+      );
+    }
+
+    // DB-configurable size limit (must be <= PDF_MULTER_LIMIT_BYTES)
     const { maxPdfSizeMb } = await this.systemService.getConfig();
     if (file.size > maxPdfSizeMb * 1024 * 1024) {
       throw new PayloadTooLargeException(
         `El archivo supera el límite permitido de ${maxPdfSizeMb} MB`,
       );
     }
+
     const s3Key = await this.s3Service.uploadPdf(file.buffer);
     const ip = req.ip || req.socket.remoteAddress || "";
     return this.archivesService.attachPdf(id, s3Key, user.sub, ip);
@@ -196,25 +256,33 @@ export class ArchivesController {
   @Post(":id/generate-pdf")
   @RequirePermissions("archives:update")
   @HttpCode(HttpStatus.OK)
+  // 3 generate-pdf/minute per IP — heavy CPU/memory operation
+  @Throttle({ pdf: { limit: 3, ttl: 60000 } })
   @ApiOperation({
     summary: "Generar PDF a partir de imágenes (JPG/PNG)",
     description:
-      "Combina múltiples imágenes en un PDF respetando el orden del array. Soporta hasta 20 imágenes.",
+      "Combina hasta 20 imágenes (5MB c/u) en un PDF. Las imágenes se procesan en orden.",
   })
   @ApiConsumes("multipart/form-data")
   @ApiBody({
     schema: {
       type: "object",
       properties: {
-        images: {
-          type: "array",
-          items: { type: "string", format: "binary" },
-        },
+        images: { type: "array", items: { type: "string", format: "binary" } },
       },
     },
   })
   @UseInterceptors(
-    FilesInterceptor("images", 5000, { storage: memoryStorage() }),
+    FilesInterceptor("images", IMAGE_MULTER_MAX_COUNT, {
+      storage: memoryStorage(),
+      fileFilter: imageFilter,
+      limits: {
+        // Hard cap per image — applied by Multer during streaming
+        fileSize: IMAGE_MULTER_LIMIT_BYTES,
+        // Hard cap on file count
+        files: IMAGE_MULTER_MAX_COUNT,
+      },
+    }),
   )
   async generatePdf(
     @Param("id", ParseUUIDPipe) id: string,
@@ -225,12 +293,28 @@ export class ArchivesController {
     if (!files || files.length === 0) {
       throw new BadRequestException("No se proporcionaron imágenes");
     }
+
+    // DB-configurable image count limit (must be <= IMAGE_MULTER_MAX_COUNT)
     const { maxPdfImages } = await this.systemService.getConfig();
     if (files.length > maxPdfImages) {
       throw new BadRequestException(
         `Se permiten máximo ${maxPdfImages} imágenes por PDF`,
       );
     }
+
+    // Magic bytes validation for each image
+    for (const file of files) {
+      const validMagic =
+        (file.mimetype === "image/jpeg" && isJpeg(file.buffer)) ||
+        (file.mimetype === "image/png" && isPng(file.buffer));
+
+      if (!validMagic) {
+        throw new BadRequestException(
+          `El archivo "${file.originalname}" no es una imagen válida`,
+        );
+      }
+    }
+
     const ip = req.ip || req.socket.remoteAddress || "";
     return this.archivesService.generatePdf(id, files, user.sub, ip);
   }
@@ -239,23 +323,17 @@ export class ArchivesController {
 
   @Get(":id/pdf")
   @RequirePermissions("archives:read")
-  @ApiOperation({ summary: "Visualizar PDF del archivo notarial" })
+  @ApiOperation({ summary: "Obtener URL firmada para visualizar PDF del archivo notarial" })
   async viewPdf(@Param("id", ParseUUIDPipe) id: string, @Res() res: Response) {
     const archive = await this.archivesService.findOne(id);
     if (!archive.pdfUrl) {
       return res
         .status(404)
-        .json({ message: "Este archivo no tiene PDF adjunto" });
+        .json({ success: false, message: "Este archivo no tiene PDF adjunto" });
     }
 
-    // Legacy: files stored locally before S3 migration
-    if (archive.pdfUrl.startsWith("/uploads/")) {
-      const filename = archive.pdfUrl.replace("/uploads/", "");
-      const filePath = join(process.cwd(), "uploads", filename);
-      return res.sendFile(filePath);
-    }
-
-    // S3: generate a pre-signed URL valid for 1 hour
+    // S3: generate a presigned URL valid for 1 hour and redirect
+    // The /uploads static route no longer exists; all PDFs must be in S3
     const signedUrl = await this.s3Service.getSignedUrl(archive.pdfUrl);
     return res.redirect(signedUrl);
   }

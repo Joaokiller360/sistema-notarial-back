@@ -4,9 +4,13 @@ import {
   IsOptional,
   IsString,
   IsUUID,
-  MinLength,
   Matches,
+  MinLength,
 } from "class-validator";
+
+const PASSWORD_REGEX = /^(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/;
+const PASSWORD_MESSAGE =
+  "La contraseña debe tener al menos 1 mayúscula, 1 número y 1 carácter especial";
 
 export class ChangePasswordDto {
   @ApiProperty({ description: "Contraseña actual" })
@@ -19,10 +23,7 @@ export class ChangePasswordDto {
   })
   @IsString()
   @MinLength(8)
-  @Matches(/^(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/, {
-    message:
-      "La contraseña debe tener al menos 1 mayúscula, 1 número y 1 carácter especial",
-  })
+  @Matches(PASSWORD_REGEX, { message: PASSWORD_MESSAGE })
   newPassword: string;
 }
 
@@ -34,10 +35,11 @@ export class ResetPasswordDto {
 
   @ApiPropertyOptional({
     description:
-      "Nueva contraseña temporal (si omite, se genera automáticamente)",
+      "Nueva contraseña temporal (si omite, se genera automáticamente con crypto.randomBytes)",
   })
   @IsOptional()
   @IsString()
   @MinLength(8)
+  @Matches(PASSWORD_REGEX, { message: PASSWORD_MESSAGE })
   newPassword?: string;
 }

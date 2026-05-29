@@ -82,7 +82,7 @@ export class RolesController {
 
   @Post(":roleId/assign/:userId")
   @RequirePermissions("roles:assign")
-  @ApiOperation({ summary: "Asignar rol a usuario" })
+  @ApiOperation({ summary: "Asignar rol a usuario (solo roles de menor jerarquía)" })
   assign(
     @Param("roleId", ParseUUIDPipe) roleId: string,
     @Param("userId", ParseUUIDPipe) userId: string,
@@ -93,13 +93,14 @@ export class RolesController {
       userId,
       roleId,
       user.sub,
+      user.roles,
       req.ip || "",
     );
   }
 
   @Delete(":roleId/revoke/:userId")
   @RequirePermissions("roles:assign")
-  @ApiOperation({ summary: "Revocar rol de usuario" })
+  @ApiOperation({ summary: "Revocar rol de usuario (solo roles de menor jerarquía)" })
   revoke(
     @Param("roleId", ParseUUIDPipe) roleId: string,
     @Param("userId", ParseUUIDPipe) userId: string,
@@ -110,6 +111,7 @@ export class RolesController {
       userId,
       roleId,
       user.sub,
+      user.roles,
       req.ip || "",
     );
   }

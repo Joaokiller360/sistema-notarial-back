@@ -9,6 +9,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { Throttle } from "@nestjs/throttler";
 import { Request } from "express";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
@@ -30,6 +31,8 @@ export class AuthController {
   @Public()
   @Post("login")
   @HttpCode(HttpStatus.OK)
+  // 5 attempts/min per IP — protects against brute force
+  @Throttle({ login: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: "Iniciar sesión" })
   login(@Body() dto: LoginDto, @Req() req: Request) {
     const ip = req.ip || req.socket.remoteAddress || "";
@@ -40,7 +43,9 @@ export class AuthController {
   @Public()
   @Post("refresh")
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Renovar access token usando refresh token" })
+  // 10 refreshes/min per IP — prevents automated token harvesting
+  @Throttle({ refresh: { limit: 10, ttl: 60000 } })
+  @ApiOperation({ summary: "Renovar tokens usando refresh token (rotación)" })
   refresh(
     @Body() body: { userId: string; refreshToken: string },
     @Req() req: Request,
@@ -53,14 +58,20 @@ export class AuthController {
   @ApiBearerAuth()
   @Post("logout")
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Cerrar sesión" })
+  @ApiOperation({ summary: "Cerrar sesión (invalida access + refresh token)" })
   logout(
     @CurrentUser() user: JwtPayload,
     @Body() body: { refreshToken: string },
     @Req() req: Request,
   ) {
     const ip = req.ip || req.socket.remoteAddress || "";
-    return this.authService.logout(user.sub, body.refreshToken, ip);
+    return this.authService.logout(
+      user.sub,
+      body.refreshToken,
+      user.jti,
+      user.exp,
+      ip,
+    );
   }
 
   @UseGuards(JwtAuthGuard)

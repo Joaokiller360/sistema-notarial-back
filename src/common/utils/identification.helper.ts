@@ -139,6 +139,9 @@ export function isNaCedulaORuc(value: string): boolean {
 
 /** Generates a unique NA cedulaORuc for records where identification does not apply. */
 export function generateNaCedulaORuc(): string {
-  const digits = Math.floor(10000000 + Math.random() * 90000000).toString();
-  return `NA${digits}`;
+  // Use crypto.randomBytes for uniform distribution (avoids Math.random() bias)
+  const { randomBytes } = require("crypto") as typeof import("crypto");
+  const buf = randomBytes(4);
+  const num = (buf.readUInt32BE(0) % 90_000_000) + 10_000_000;
+  return `NA${num}`;
 }

@@ -9,6 +9,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import {
@@ -24,6 +25,7 @@ import { RolesGuard } from "../../common/guards/roles.guard";
 import { CreateNotaryDto } from "./dto/create-notary.dto";
 import { UpdateNotaryDto } from "./dto/update-notary.dto";
 import { NotariesService } from "./notaries.service";
+import { PaginationDto } from "../../common/utils/pagination.util";
 
 @ApiTags("Notaries")
 @ApiBearerAuth()
@@ -44,10 +46,10 @@ export class NotariesController {
   }
 
   @Get()
-  @ApiOperation({ summary: "Listar todas las notarías" })
+  @ApiOperation({ summary: "Listar notarías (paginado)" })
   @ApiResponse({ status: 200, description: "Lista de notarías" })
-  findAll() {
-    return this.notariesService.findAll();
+  findAll(@Query() pagination: PaginationDto) {
+    return this.notariesService.findAll(pagination.page, pagination.limit);
   }
 
   @Get(":id")

@@ -4,11 +4,10 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { join } from "path";
 import { PDFDocument } from "pdf-lib";
 import { PrismaService } from "../../prisma/prisma.service";
 import { LogsService } from "../logs/logs.service";
+import { S3Service } from "../../common/s3/s3.service";
 import {
   ArchiveType,
   BeneficiaryDto,
@@ -33,16 +32,16 @@ const ARCHIVE_INCLUDE = {
   beneficiaries: true,
 };
 
-/** Maps GrantorDto/BeneficiaryDto to DB shape, storing passport in cedulaORuc. */
 function mapParticipant(p: GrantorDto | BeneficiaryDto) {
   return {
     nombresCompletos: p.nombresCompletos,
-    cedulaORuc: p.es_pasaporte ? (p.pasaporte as string) : (p.cedulaORuc as string),
+    cedulaORuc: p.es_pasaporte
+      ? (p.pasaporte as string)
+      : (p.cedulaORuc as string),
     nacionalidad: p.nacionalidad,
   };
 }
 
-/** Validates identification for all grantors and beneficiaries, throwing on first error. */
 function validateParticipants(
   grantors: GrantorDto[],
   beneficiaries: BeneficiaryDto[],
@@ -55,7 +54,6 @@ function validateParticipants(
     });
     if (!result.valid) throw new BadRequestException(result.error);
   }
-
   for (const b of beneficiaries ?? []) {
     const result = validateIdentificacion({
       cedulaORuc: b.cedulaORuc,
@@ -73,6 +71,7 @@ export class ArchivesService {
   constructor(
     private prisma: PrismaService,
     private logs: LogsService,
+    private s3: S3Service,
   ) {}
 
   async findAll(page = 1, limit = 20, search?: string, type?: ArchiveType) {
@@ -132,7 +131,6 @@ export class ArchivesService {
     if (existing)
       throw new BadRequestException(`El código "${dto.code}" ya está en uso`);
 
-    // Validate identification for all participants before any DB write
     validateParticipants(dto.grantors ?? [], dto.beneficiaries ?? []);
 
     const archive = await this.prisma.archive.create({
@@ -176,7 +174,6 @@ export class ArchivesService {
         throw new BadRequestException(`El código "${dto.code}" ya está en uso`);
     }
 
-    // Validate identification for updated participants
     if (dto.grantors !== undefined || dto.beneficiaries !== undefined) {
       validateParticipants(dto.grantors ?? [], dto.beneficiaries ?? []);
     }
@@ -188,7 +185,10 @@ export class ArchivesService {
         await tx.grantor.deleteMany({ where: { archiveId: id } });
         if (grantors.length) {
           await tx.grantor.createMany({
-            data: grantors.map((g) => ({ ...mapParticipant(g), archiveId: id })),
+            data: grantors.map((g) => ({
+              ...mapParticipant(g),
+              archiveId: id,
+            })),
           });
         }
       }
@@ -197,7 +197,10 @@ export class ArchivesService {
         await tx.beneficiary.deleteMany({ where: { archiveId: id } });
         if (beneficiaries.length) {
           await tx.beneficiary.createMany({
-            data: beneficiaries.map((b) => ({ ...mapParticipant(b), archiveId: id })),
+            data: beneficiaries.map((b) => ({
+              ...mapParticipant(b),
+              archiveId: id,
+            })),
           });
         }
       }
@@ -271,7 +274,7 @@ export class ArchivesService {
     files: Express.Multer.File[],
     userId: string,
     ip: string,
-  ): Promise<{ message: string; pdfPath: string }> {
+  ): Promise<{ message: string; pdfUrl: string }> {
     const archive = await this.prisma.archive.findFirst({
       where: { id, deletedAt: null },
     });
@@ -281,12 +284,6 @@ export class ArchivesService {
 
     for (const file of files) {
       const mime = file.mimetype;
-
-      if (mime !== "image/jpeg" && mime !== "image/png") {
-        throw new BadRequestException(
-          `Formato no soportado: ${file.originalname}. Solo se admiten JPG y PNG.`,
-        );
-      }
 
       let embeddedImage: Awaited<ReturnType<typeof pdfDoc.embedJpg>>;
       try {
@@ -311,19 +308,12 @@ export class ArchivesService {
 
     const pdfBytes = await pdfDoc.save();
 
-    const uploadDest = process.env.UPLOAD_DEST ?? "./uploads";
-    const pdfDir = join(uploadDest, "pdfs");
-    if (!existsSync(pdfDir)) mkdirSync(pdfDir, { recursive: true });
-
-    const filename = `generated_${id}_${Date.now()}.pdf`;
-    const absolutePath = join(pdfDir, filename);
-    const relativePath = `pdfs/${filename}`;
-
-    writeFileSync(absolutePath, pdfBytes);
+    // Upload generated PDF to S3 — no local file storage
+    const s3Key = await this.s3.uploadPdf(Buffer.from(pdfBytes));
 
     await this.prisma.archive.update({
       where: { id },
-      data: { pdfPath: relativePath, updatedById: userId },
+      data: { pdfUrl: s3Key, updatedById: userId },
     });
 
     await this.logs.log({
@@ -334,8 +324,8 @@ export class ArchivesService {
       ip,
     });
 
-    this.logger.log(`PDF generado para archivo ${id}: ${relativePath}`);
+    this.logger.log(`PDF generado y subido a S3 para archivo ${id}: ${s3Key}`);
 
-    return { message: "PDF generado correctamente", pdfPath: relativePath };
+    return { message: "PDF generado correctamente", pdfUrl: s3Key };
   }
 }

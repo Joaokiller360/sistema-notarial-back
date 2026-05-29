@@ -56,14 +56,14 @@ model User {
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 
-  userRoles            UserRole[]
-  refreshTokens        RefreshToken[]
-  createdArchives      Archive[]      @relation("ArchiveCreatedBy")
-  updatedArchives      Archive[]      @relation("ArchiveUpdatedBy")
-  logs                 Log[]
-  sentNotifications    Notification[] @relation("NotificationSender")
-  sentTasks            Task[]         @relation("TaskSender")
-  receivedTasks        Task[]         @relation("TaskRecipient")
+  userRoles         UserRole[]
+  refreshTokens     RefreshToken[]
+  createdArchives   Archive[]      @relation("ArchiveCreatedBy")
+  updatedArchives   Archive[]      @relation("ArchiveUpdatedBy")
+  logs              Log[]
+  sentNotifications Notification[] @relation("NotificationSender")
+  sentTasks         Task[]         @relation("TaskSender")
+  receivedTasks     Task[]         @relation("TaskRecipient")
 
   @@index([email])
   @@index([deletedAt])
@@ -82,6 +82,8 @@ model RefreshToken {
 
   @@index([token])
   @@index([userId])
+  // Composite index for active-session queries in generateTokens and refreshTokens
+  @@index([userId, isRevoked, expiresAt])
   @@map("refresh_tokens")
 }
 

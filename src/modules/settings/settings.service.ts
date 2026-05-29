@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { LogsService } from "../logs/logs.service";
 import {
+  ALLOWED_SETTING_KEYS,
   BulkUpdateSettingsDto,
   UpdateSettingDto,
 } from "./dto/update-setting.dto";
@@ -27,6 +28,7 @@ export class SettingsService {
   }
 
   async findOne(key: string) {
+    this.assertAllowedKey(key);
     const setting = await this.prisma.setting.findUnique({ where: { key } });
     if (!setting)
       throw new NotFoundException(`Configuración "${key}" no encontrada`);
@@ -39,6 +41,8 @@ export class SettingsService {
     requesterId: string,
     ip: string,
   ) {
+    this.assertAllowedKey(key);
+
     const setting = await this.prisma.setting.upsert({
       where: { key },
       update: { value: dto.value },
@@ -49,7 +53,8 @@ export class SettingsService {
       userId: requesterId,
       action: "UPDATE_SETTING",
       resource: "settings",
-      details: { key, value: dto.value },
+      // Log the key but NOT the value to avoid leaking sensitive config in audit trail
+      details: { key },
       ip,
     });
 
@@ -61,12 +66,40 @@ export class SettingsService {
     requesterId: string,
     ip: string,
   ) {
+    const keys = Object.keys(dto.settings);
+
+    if (keys.length === 0) {
+      throw new BadRequestException("Debe proporcionar al menos una configuración");
+    }
+
+    if (keys.length > 20) {
+      throw new BadRequestException("Máximo 20 configuraciones por operación");
+    }
+
+    // Validate all keys against allowlist before any DB write
+    const unknownKeys = keys.filter((k) => !ALLOWED_SETTING_KEYS.has(k));
+    if (unknownKeys.length > 0) {
+      throw new BadRequestException(
+        `Configuraciones no permitidas: ${unknownKeys.join(", ")}`,
+      );
+    }
+
+    // Validate value lengths
+    const overLength = keys.filter(
+      (k) => typeof dto.settings[k] !== "string" || dto.settings[k].length > 500,
+    );
+    if (overLength.length > 0) {
+      throw new BadRequestException(
+        `Valores demasiado largos en: ${overLength.join(", ")} (máx. 500 caracteres)`,
+      );
+    }
+
     const updates = await this.prisma.$transaction(
-      Object.entries(dto.settings).map(([key, value]) =>
+      keys.map((key) =>
         this.prisma.setting.upsert({
           where: { key },
-          update: { value },
-          create: { key, value },
+          update: { value: dto.settings[key] },
+          create: { key, value: dto.settings[key] },
         }),
       ),
     );
@@ -75,10 +108,19 @@ export class SettingsService {
       userId: requesterId,
       action: "BULK_UPDATE_SETTINGS",
       resource: "settings",
-      details: { keys: Object.keys(dto.settings) },
+      // Log keys only, not values
+      details: { keys },
       ip,
     });
 
     return updates;
+  }
+
+  private assertAllowedKey(key: string): void {
+    if (!key || key.length > 100 || !ALLOWED_SETTING_KEYS.has(key)) {
+      throw new BadRequestException(
+        `Configuración "${key}" no reconocida`,
+      );
+    }
   }
 }

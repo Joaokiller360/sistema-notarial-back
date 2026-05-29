@@ -101,11 +101,13 @@ export class NotificationsController {
 
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: "Eliminar notificación propia" })
+  @ApiOperation({
+    summary: "Eliminar notificación — broadcasts solo por remitente o Super Admin",
+  })
   remove(
     @Param("id", ParseUUIDPipe) id: string,
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.notificationsService.remove(id, user.sub);
+    return this.notificationsService.remove(id, user.sub, user.roles);
   }
 }

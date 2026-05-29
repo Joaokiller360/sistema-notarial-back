@@ -1,10 +1,12 @@
 import {
   Injectable,
+  Logger,
   OnModuleInit,
   OnModuleDestroy,
-  Logger,
 } from "@nestjs/common";
 import { PrismaClient } from "@prisma/client";
+
+const SLOW_QUERY_THRESHOLD_MS = process.env.NODE_ENV === "production" ? 1_000 : 300;
 
 @Injectable()
 export class PrismaService
@@ -23,21 +25,27 @@ export class PrismaService
     });
   }
 
-  async onModuleInit() {
+  async onModuleInit(): Promise<void> {
     await this.$connect();
     this.logger.log("Database connected");
 
-    // Log slow queries in development
-    if (process.env.NODE_ENV === "development") {
-      (this as any).$on("query", (e: any) => {
-        if (e.duration > 500) {
-          this.logger.warn(`Slow query (${e.duration}ms): ${e.query}`);
-        }
-      });
-    }
+    // Log slow queries in all environments — threshold is higher in production
+    // to reduce noise while still catching problematic queries before they
+    // exhaust the connection pool.
+    (this as any).$on("query", (e: any) => {
+      if (e.duration > SLOW_QUERY_THRESHOLD_MS) {
+        this.logger.warn(
+          `Slow query (${e.duration}ms): ${e.query.slice(0, 200)}`,
+        );
+      }
+    });
+
+    (this as any).$on("error", (e: any) => {
+      this.logger.error(`Prisma error: ${e.message}`);
+    });
   }
 
-  async onModuleDestroy() {
+  async onModuleDestroy(): Promise<void> {
     await this.$disconnect();
     this.logger.log("Database disconnected");
   }

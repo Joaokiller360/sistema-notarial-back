@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { PassportStrategy } from "@nestjs/passport";
 import { ExtractJwt, Strategy } from "passport-jwt";
 import { PrismaService } from "../../../prisma/prisma.service";
+import { TokenDenylistService } from "../../../common/token-denylist/token-denylist.service";
 import { JwtPayload } from "../../../common/decorators/current-user.decorator";
 
 @Injectable()
@@ -10,6 +11,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
   constructor(
     private config: ConfigService,
     private prisma: PrismaService,
+    private denylist: TokenDenylistService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -18,7 +20,12 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
     });
   }
 
-  async validate(payload: JwtPayload) {
+  async validate(payload: JwtPayload): Promise<JwtPayload> {
+    // Reject tokens that were explicitly revoked on logout
+    if (payload.jti && (await this.denylist.isDenied(payload.jti))) {
+      throw new UnauthorizedException("Token revocado");
+    }
+
     const user = await this.prisma.user.findFirst({
       where: { id: payload.sub, isActive: true, deletedAt: null },
       include: {
@@ -34,8 +41,9 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
       },
     });
 
-    if (!user)
+    if (!user) {
       throw new UnauthorizedException("Usuario no encontrado o inactivo");
+    }
 
     const roles = user.userRoles.map((ur) => ur.role.type);
     const permissions = [
@@ -51,6 +59,8 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
       email: user.email,
       roles,
       permissions,
+      jti: payload.jti,
+      exp: payload.exp,
     } as JwtPayload;
   }
 }

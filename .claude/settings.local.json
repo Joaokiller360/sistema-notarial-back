@@ -16,7 +16,11 @@
       "Bash(ln -s ~/.claude/token-optimizer/skills/token-optimizer ~/.claude/skills/token-optimizer)",
       "Read(//Users/joaobarres/.claude/skills/**)",
       "Bash(npm uninstall *)",
-      "Bash(xargs ls -la)"
+      "Bash(xargs ls -la)",
+      "Bash(xargs basename -a)",
+      "Bash(node *)",
+      "Bash(npm audit *)",
+      "Bash(npm view *)"
     ]
   }
 }
