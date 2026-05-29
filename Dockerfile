@@ -46,10 +46,13 @@ RUN mkdir -p uploads logs && \
 
 USER nestjs
 
-# Explicit port — must match PORT env var
-EXPOSE 8001
+# Default internal container port. Dokploy/docker-compose maps an external port to this.
+# Override via PORT env var — NestJS reads it in app.config.ts.
+ENV PORT=8000
+EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8001/api/v1/health/live || exit 1
+# Healthcheck reads PORT at runtime so it tracks whatever NestJS actually binds.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget -q --spider "http://localhost:${PORT:-8000}/api/v1/health/live" || exit 1
 
 CMD ["node", "dist/src/main"]
