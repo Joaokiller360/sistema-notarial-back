@@ -10,7 +10,7 @@
       "Bash(xargs cat)",
       "Bash(curl -s http://localhost:3000/archives)",
       "Bash(PGPASSWORD=Sanandres00 psql *)",
-      "Bash(curl -s -X POST http://localhost:8000/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@notaria.com\",\"password\":\"Admin123!\"}')",
+      "Bash(curl -s -X POST http://localhost:8001/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@notaria.com\",\"password\":\"Admin123!\"}')",
       "Bash(curl -s -X POST https://developer.joaobarres.dev/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@notaria.com\",\"password\":\"Admin123!\"}')",
       "Bash(mv ~/.claude/skills/token-optimizer ~/.claude/skills/token-optimizer.local)",
       "Bash(ln -s ~/.claude/token-optimizer/skills/token-optimizer ~/.claude/skills/token-optimizer)",
@@ -20,7 +20,13 @@
       "Bash(xargs basename -a)",
       "Bash(node *)",
       "Bash(npm audit *)",
-      "Bash(npm view *)"
+      "Bash(npm view *)",
+      "Bash(curl -si -X OPTIONS https://developer.joaobarres.dev/api/v1/auth/login -H 'Origin: https://test.joaobarres.dev' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type')",
+      "Bash(ssh -o ConnectTimeout=5 -o BatchMode=yes root@207.180.216.55 \"echo connected\")",
+      "Bash(ssh -o ConnectTimeout=5 -o BatchMode=yes joaobarres@207.180.216.55 \"echo connected\")",
+      "Bash(curl -si -X GET \"https://developer.joaobarres.dev/\")",
+      "Bash(ssh -o ConnectTimeout=5 -i /Users/joaobarres/.ssh/id_ed25519 root@207.180.216.55 \"echo connected && whoami\")",
+      "Bash(ssh -o ConnectTimeout=5 -i /Users/joaobarres/.ssh/id_rsa root@207.180.216.55 \"echo connected && whoami\")"
     ]
   }
 }

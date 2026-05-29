@@ -50,6 +50,6 @@ USER nestjs
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8000/api/v1/health/live || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8001/api/v1/health/live || exit 1
 
 CMD ["node", "dist/src/main"]

@@ -34,6 +34,18 @@ async function bootstrap() {
     app.getHttpAdapter().getInstance().set("trust proxy", 1);
   }
 
+  // ─── CORS ───────────────────────────────────────────────────────────────────
+  // Must be registered before Helmet so OPTIONS preflight is handled first
+  const corsOrigins = config.get<string[]>("app.corsOrigins") || [
+    "http://localhost:3000",
+  ];
+  app.enableCors({
+    origin: corsOrigins,
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+  });
+
   // ─── SECURITY HEADERS (Helmet) ───────────────────────────────────────────────
   app.use(
     helmet({
@@ -81,17 +93,6 @@ async function bootstrap() {
       },
     }),
   );
-
-  // ─── CORS ───────────────────────────────────────────────────────────────────
-  const corsOrigins = config.get<string[]>("app.corsOrigins") || [
-    "http://localhost:3000",
-  ];
-  app.enableCors({
-    origin: corsOrigins,
-    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization", "Accept"],
-  });
 
   // ─── GLOBAL GUARDS ──────────────────────────────────────────────────────────
   app.useGlobalGuards(
