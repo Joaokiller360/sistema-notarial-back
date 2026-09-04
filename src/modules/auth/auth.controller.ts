@@ -83,11 +83,30 @@ export class AuthController {
     return this.authService.getMe(user.sub);
   }
 
+  // Self-service profile edit. The target is always the caller (user.sub from
+  // the JWT) — no id in body/params, so nobody can edit another user here.
+  // Deliberately NO PermissionsGuard / @RequirePermissions: that's for admins
+  // editing OTHER users via PATCH /users/:id, not for editing your own name.
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Patch("me")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Actualizar nombre y apellido del usuario autenticado (self-service)" })
+  updateMe(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: UpdateProfileDto,
+    @Req() req: Request,
+  ) {
+    const ip = req.ip || req.socket.remoteAddress || "";
+    return this.authService.updateProfile(user.sub, dto, ip);
+  }
+
+  // Kept for backward compatibility — same behavior as PATCH /auth/me.
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @Patch("profile")
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Actualizar nombre y apellido del usuario autenticado" })
+  @ApiOperation({ summary: "Alias de PATCH /auth/me (compatibilidad)" })
   updateProfile(
     @CurrentUser() user: JwtPayload,
     @Body() dto: UpdateProfileDto,

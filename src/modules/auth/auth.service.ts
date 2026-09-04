@@ -387,19 +387,26 @@ export class AuthService {
     userId: string,
     dto: UpdateProfileDto,
     ip: string,
-  ): Promise<{ id: string; email: string; firstName: string; lastName: string }> {
+  ): Promise<{
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    roles: string[];
+    permissions: string[];
+    pdfDownloadDisabled: boolean;
+  }> {
     const user = await this.prisma.user.findFirst({
       where: { id: userId, deletedAt: null },
     });
     if (!user) throw new NotFoundException("Usuario no encontrado");
 
-    const updated = await this.prisma.user.update({
+    await this.prisma.user.update({
       where: { id: userId },
       data: {
         ...(dto.firstName !== undefined && { firstName: dto.firstName }),
         ...(dto.lastName !== undefined && { lastName: dto.lastName }),
       },
-      select: { id: true, email: true, firstName: true, lastName: true },
     });
 
     await this.logs.log({
@@ -409,7 +416,8 @@ export class AuthService {
       ip,
     });
 
-    return updated;
+    // Same shape as GET /auth/me — the frontend refreshes its store from this response
+    return this.getMe(userId);
   }
 
   // ─── HELPERS ─────────────────────────────────────────────────────────────────
