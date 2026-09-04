@@ -59,6 +59,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
       email: user.email,
       roles,
       permissions,
+      pdfDownloadDisabled: user.pdfDownloadDisabled,
       jti: payload.jti,
       exp: payload.exp,
     } as JwtPayload;

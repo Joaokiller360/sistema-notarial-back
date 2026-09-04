@@ -2,8 +2,9 @@ import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform } from "class-transformer";
 import { IsBoolean, IsEnum, IsOptional, IsString, Matches } from "class-validator";
 import { NotificationType } from "./create-notification.dto";
+import { PaginationDto } from "../../../common/utils/pagination.util";
 
-export class NotificationQueryDto {
+export class NotificationQueryDto extends PaginationDto {
   @ApiPropertyOptional({ enum: NotificationType })
   @IsOptional()
   @IsEnum(NotificationType)

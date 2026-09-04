@@ -72,4 +72,13 @@ export class CreateUserDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      "true = restringe descarga/impresión de PDF. Solo un SUPER_ADMIN puede fijarlo y no aplica sobre otro SUPER_ADMIN.",
+  })
+  @IsOptional()
+  @IsBoolean()
+  pdfDownloadDisabled?: boolean;
 }

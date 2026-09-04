@@ -6,6 +6,9 @@ export interface JwtPayload {
   roles: string[];
   permissions: string[];
   jti: string;   // JWT ID — required for logout denylist
+  // Resolved from DB on every request by JwtStrategy (not carried in the token).
+  // true = user may not download/print archive PDFs.
+  pdfDownloadDisabled?: boolean;
   iat?: number;
   exp?: number;
 }

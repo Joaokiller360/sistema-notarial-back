@@ -7,6 +7,10 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import {
+  CurrentUser,
+  JwtPayload,
+} from "../../common/decorators/current-user.decorator";
+import {
   ApiBearerAuth,
   ApiOperation,
   ApiQuery,
@@ -79,12 +83,17 @@ export class FilesController {
       },
     },
   })
-  async getViewUrl(@Query("key") key: string) {
+  async getViewUrl(
+    @Query("key") key: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
     // Validate key format to prevent path traversal or unauthorized access
     if (!key || !/^(pdfs|uploads)\/[\w\-/]+\.(pdf|jpg|jpeg|png|webp)$/i.test(key)) {
       return { error: "Key de archivo inválida" };
     }
-    const viewUrl = await this.s3.getSignedUrl(key, 3600);
-    return { viewUrl, expiresIn: 3600 };
+    // Restricted users get an inline URL (view only, no forced-download filename)
+    const disposition = user.pdfDownloadDisabled ? "inline" : "attachment";
+    const viewUrl = await this.s3.getSignedUrl(key, 3600, disposition);
+    return { viewUrl, expiresIn: 3600, downloadRestricted: !!user.pdfDownloadDisabled };
   }
 }

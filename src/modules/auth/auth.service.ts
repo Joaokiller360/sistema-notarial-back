@@ -114,7 +114,54 @@ export class AuthService {
         lastName: user.lastName,
         roles,
         permissions,
+        pdfDownloadDisabled: user.pdfDownloadDisabled,
       },
+    };
+  }
+
+  // ─── ME — perfil del usuario autenticado ─────────────────────────────────────
+
+  async getMe(userId: string): Promise<{
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    roles: string[];
+    permissions: string[];
+    pdfDownloadDisabled: boolean;
+  }> {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, isActive: true, deletedAt: null },
+      include: {
+        userRoles: {
+          include: {
+            role: {
+              include: { rolePermissions: { include: { permission: true } } },
+            },
+          },
+        },
+      },
+    });
+
+    if (!user) throw new NotFoundException("Usuario no encontrado");
+
+    const roles = user.userRoles.map((ur) => ur.role.type as string);
+    const permissions = [
+      ...new Set(
+        user.userRoles.flatMap((ur) =>
+          ur.role.rolePermissions.map((rp) => rp.permission.name),
+        ),
+      ),
+    ];
+
+    return {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      roles,
+      permissions,
+      pdfDownloadDisabled: user.pdfDownloadDisabled,
     };
   }
 

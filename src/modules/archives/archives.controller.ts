@@ -26,15 +26,15 @@ import {
   ApiBody,
   ApiConsumes,
   ApiOperation,
-  ApiQuery,
   ApiTags,
 } from "@nestjs/swagger";
 import { SkipThrottle, Throttle } from "@nestjs/throttler";
 import { Request, Response } from "express";
 import { memoryStorage } from "multer";
 import { ArchivesService } from "./archives.service";
-import { ArchiveType, CreateArchiveDto } from "./dto/create-archive.dto";
+import { CreateArchiveDto } from "./dto/create-archive.dto";
 import { UpdateArchiveDto } from "./dto/update-archive.dto";
+import { GetArchivesDto } from "./dto/get-archives.dto";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
@@ -42,7 +42,6 @@ import {
   CurrentUser,
   JwtPayload,
 } from "../../common/decorators/current-user.decorator";
-import { PaginationDto } from "../../common/utils/pagination.util";
 import { S3Service } from "../../common/s3/s3.service";
 import { SystemService } from "../system/system.service";
 
@@ -128,18 +127,12 @@ export class ArchivesController {
   @RequirePermissions("archives:read")
   @SkipThrottle()
   @ApiOperation({ summary: "Listar archivos notariales" })
-  @ApiQuery({ name: "search", required: false })
-  @ApiQuery({ name: "type", required: false, enum: ArchiveType })
-  findAll(
-    @Query() pagination: PaginationDto,
-    @Query("search") search?: string,
-    @Query("type") type?: ArchiveType,
-  ) {
+  findAll(@Query() query: GetArchivesDto) {
     return this.archivesService.findAll(
-      pagination.page,
-      pagination.limit,
-      search,
-      type,
+      query.page,
+      query.limit,
+      query.search,
+      query.type,
     );
   }
 
@@ -326,7 +319,11 @@ export class ArchivesController {
   @Get(":id/pdf")
   @RequirePermissions("archives:read")
   @ApiOperation({ summary: "Obtener URL firmada para visualizar PDF del archivo notarial" })
-  async viewPdf(@Param("id", ParseUUIDPipe) id: string, @Res() res: Response) {
+  async viewPdf(
+    @Param("id", ParseUUIDPipe) id: string,
+    @CurrentUser() user: JwtPayload,
+    @Res() res: Response,
+  ) {
     const archive = await this.archivesService.findOne(id);
     if (!archive.pdfUrl) {
       return res
@@ -334,9 +331,14 @@ export class ArchivesController {
         .json({ success: false, message: "Este archivo no tiene PDF adjunto" });
     }
 
-    // S3: generate a presigned URL valid for 1 hour and redirect
-    // The /uploads static route no longer exists; all PDFs must be in S3
-    const signedUrl = await this.s3Service.getSignedUrl(archive.pdfUrl);
+    // S3: generate a presigned URL valid for 1 hour and redirect.
+    // Restricted users get an inline disposition (view only, no forced download).
+    const disposition = user.pdfDownloadDisabled ? "inline" : "attachment";
+    const signedUrl = await this.s3Service.getSignedUrl(
+      archive.pdfUrl,
+      3600,
+      disposition,
+    );
     return res.redirect(signedUrl);
   }
 }

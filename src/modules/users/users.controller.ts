@@ -11,17 +11,13 @@ import {
   Req,
   UseGuards,
 } from "@nestjs/common";
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiQuery,
-  ApiTags,
-} from "@nestjs/swagger";
+import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { SkipThrottle } from "@nestjs/throttler";
 import { Request } from "express";
 import { UsersService } from "./users.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
+import { GetUsersDto } from "./dto/get-users.dto";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "../../common/guards/permissions.guard";
 import { ProtectSuperAdminGuard } from "../../common/guards/protect-super-admin.guard";
@@ -31,7 +27,6 @@ import {
   CurrentUser,
   JwtPayload,
 } from "../../common/decorators/current-user.decorator";
-import { PaginationDto } from "../../common/utils/pagination.util";
 
 @ApiTags("Users")
 @ApiBearerAuth()
@@ -44,12 +39,8 @@ export class UsersController {
   @SkipThrottle()
   @RequirePermissions("users:read")
   @ApiOperation({ summary: "Listar usuarios" })
-  @ApiQuery({ name: "search", required: false })
-  findAll(
-    @Query() pagination: PaginationDto,
-    @Query("search") search?: string,
-  ) {
-    return this.usersService.findAll(pagination.page, pagination.limit, search);
+  findAll(@Query() query: GetUsersDto) {
+    return this.usersService.findAll(query.page, query.limit, query.search);
   }
 
   @Get(":id")

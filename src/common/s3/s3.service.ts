@@ -79,19 +79,55 @@ export class S3Service {
     }
   }
 
-  async getSignedUrl(key: string, expiresIn = 3600): Promise<string> {
+  /**
+   * Presigned GET URL.
+   * `disposition` defaults to "attachment" (force download). Pass "inline" for
+   * users whose PDF download/print is restricted — they can still view the file
+   * in-app but no "Save as" filename is offered by the browser.
+   */
+  async getSignedUrl(
+    key: string,
+    expiresIn = 3600,
+    disposition: "attachment" | "inline" = "attachment",
+  ): Promise<string> {
     try {
       const command = new GetObjectCommand({
         Bucket: this.bucket,
         Key: key,
-        // Force download; prevents inline execution of PDFs in browser
-        ResponseContentDisposition: "attachment",
+        ResponseContentDisposition: disposition,
       });
       return await getSignedUrl(this.client, command, { expiresIn });
     } catch (err) {
       this.logger.error("S3 presigned view URL generation failed", err instanceof Error ? err.stack : err);
       throw new InternalServerErrorException("Error al generar URL de visualización");
     }
+  }
+
+  /** Upload a UAFE payment-receipt image. Returns the S3 key. */
+  async uploadComprobante(buffer: Buffer, mimeType: string): Promise<string> {
+    const ext = (
+      { "image/jpeg": "jpg", "image/png": "png" } as Record<string, string>
+    )[mimeType] ?? "bin";
+    const key = `uploads/comprobantes/${uuidv4()}.${ext}`;
+    try {
+      await this.client.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Body: buffer,
+          ContentType: mimeType,
+          ServerSideEncryption: ServerSideEncryption.AES256,
+        }),
+        { abortSignal: AbortSignal.timeout(S3_TIMEOUT_MS) },
+      );
+    } catch (err) {
+      this.logger.error(
+        "S3 comprobante upload failed",
+        err instanceof Error ? err.stack : err,
+      );
+      throw new InternalServerErrorException("Error al subir el comprobante");
+    }
+    return key;
   }
 
   async deleteFile(key: string): Promise<void> {

@@ -23,6 +23,7 @@ const USER_SELECT = {
   firstName: true,
   lastName: true,
   isActive: true,
+  pdfDownloadDisabled: true,
   createdAt: true,
   updatedAt: true,
   userRoles: {
@@ -91,6 +92,14 @@ export class UsersService {
       await this.validateRoleCreationPermission(dto.roleIds, requester.roles);
     }
 
+    if (dto.pdfDownloadDisabled !== undefined) {
+      await this.assertPdfFlagChangeAllowed(
+        requester.roles,
+        dto.roleIds,
+        undefined,
+      );
+    }
+
     const exists = await this.prisma.user.findFirst({
       where: { email: dto.email, deletedAt: null },
     });
@@ -108,6 +117,7 @@ export class UsersService {
         firstName: dto.firstName,
         lastName: dto.lastName,
         isActive: dto.isActive ?? true,
+        pdfDownloadDisabled: dto.pdfDownloadDisabled ?? false,
         ...(dto.roleIds?.length && {
           userRoles: {
             create: dto.roleIds.map((roleId) => ({ roleId })),
@@ -138,6 +148,10 @@ export class UsersService {
       where: { id, deletedAt: null },
     });
     if (!existing) throw new NotFoundException("Usuario no encontrado");
+
+    if (dto.pdfDownloadDisabled !== undefined) {
+      await this.assertPdfFlagChangeAllowed(requester.roles, dto.roleIds, id);
+    }
 
     if (dto.roleIds?.length) {
       if (!requester.roles.includes(RoleType.SUPER_ADMIN)) {
@@ -192,6 +206,46 @@ export class UsersService {
   }
 
   // ─── HELPERS ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Guards the `pdfDownloadDisabled` flag:
+   *  - only a SUPER_ADMIN may set it;
+   *  - it may never target a SUPER_ADMIN account.
+   * The target's role set is taken from `targetRoleIds` when the same request
+   * also changes roles, otherwise from the target user's current roles.
+   */
+  private async assertPdfFlagChangeAllowed(
+    requesterRoles: string[],
+    targetRoleIds: string[] | undefined,
+    targetUserId: string | undefined,
+  ): Promise<void> {
+    if (!requesterRoles.includes(RoleType.SUPER_ADMIN)) {
+      throw new ForbiddenException(
+        "Solo un SUPER_ADMIN puede modificar la restricción de descarga de PDF",
+      );
+    }
+
+    let targetTypes: RoleType[] = [];
+    if (targetRoleIds?.length) {
+      const roles = await this.prisma.role.findMany({
+        where: { id: { in: targetRoleIds } },
+        select: { type: true },
+      });
+      targetTypes = roles.map((r) => r.type);
+    } else if (targetUserId) {
+      const userRoles = await this.prisma.userRole.findMany({
+        where: { userId: targetUserId },
+        include: { role: { select: { type: true } } },
+      });
+      targetTypes = userRoles.map((ur) => ur.role.type);
+    }
+
+    if (targetTypes.includes(RoleType.SUPER_ADMIN)) {
+      throw new BadRequestException(
+        "No se puede restringir la descarga de PDF a un SUPER_ADMIN",
+      );
+    }
+  }
 
   private async validateRoleCreationPermission(
     roleIds: string[],

@@ -52,6 +52,8 @@ model User {
   firstName String    @map("first_name")
   lastName  String    @map("last_name")
   isActive  Boolean   @default(true) @map("is_active")
+  // true = el usuario NO puede descargar / imprimir / abrir en pestaña nueva los PDF
+  pdfDownloadDisabled Boolean @default(false) @map("pdf_download_disabled")
   deletedAt DateTime? @map("deleted_at")
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -64,6 +66,7 @@ model User {
   sentNotifications Notification[] @relation("NotificationSender")
   sentTasks         Task[]         @relation("TaskSender")
   receivedTasks     Task[]         @relation("TaskRecipient")
+  uafeForms         UafeForm[]     @relation("UafeFilledBy")
 
   @@index([email])
   @@index([deletedAt])
@@ -307,6 +310,52 @@ model Notification {
   @@index([recipientId])
   @@index([sentAt])
   @@map("notifications")
+}
+
+// ─── UAFE FORMS ("Conozca a su Cliente") ──────────────────────────────────────
+
+model UafeForm {
+  id            String  @id @default(uuid())
+  filledById    String? @map("filled_by_id")
+  filledByName  String  @map("filled_by_name") @db.VarChar(200)
+  filledByEmail String  @map("filled_by_email") @db.VarChar(200)
+  filledByRole  String  @map("filled_by_role") @db.VarChar(50)
+  templateId    String  @map("template_id") @db.VarChar(100)
+  templateName  String  @map("template_name") @db.VarChar(200)
+
+  // Contenido completo del formulario (UafeFormData). NUNCA guarda base64 de comprobantes.
+  data Json
+
+  // Campos desnormalizados desde `data` para filtrar en la lista sin escanear el JSON
+  nacionalidad        String? @db.VarChar(120)
+  nivelRiesgo         String? @map("nivel_riesgo") @db.VarChar(20)
+  comparecienteNombre String? @map("compareciente_nombre") @db.VarChar(250)
+  comparecienteId     String? @map("compareciente_id") @db.VarChar(50)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  filledBy     User?             @relation("UafeFilledBy", fields: [filledById], references: [id], onDelete: SetNull)
+  comprobantes UafeComprobante[]
+
+  @@index([filledById])
+  @@index([createdAt])
+  @@index([nacionalidad])
+  @@index([nivelRiesgo])
+  @@index([comparecienteId])
+  @@map("uafe_forms")
+}
+
+model UafeComprobante {
+  id        String   @id @default(uuid())
+  formId    String   @map("form_id")
+  s3Key     String   @map("s3_key")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  form UafeForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@index([formId])
+  @@map("uafe_comprobantes")
 }
 
 // ─── TASKS ────────────────────────────────────────────────────────────────────

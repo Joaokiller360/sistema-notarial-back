@@ -31,7 +31,6 @@ import {
   CurrentUser,
   JwtPayload,
 } from "../../common/decorators/current-user.decorator";
-import { PaginationDto } from "../../common/utils/pagination.util";
 
 @ApiTags("Tasks")
 @ApiBearerAuth()
@@ -56,14 +55,13 @@ export class TasksController {
   @ApiQuery({ name: "status", required: false, enum: TaskStatus })
   @ApiQuery({ name: "priority", required: false, enum: TaskPriority })
   getReceived(
-    @Query() pagination: PaginationDto,
     @Query() query: TaskQueryDto,
     @CurrentUser() user: JwtPayload,
   ) {
     return this.tasksService.getReceived(
       user.sub,
-      pagination.page,
-      pagination.limit,
+      query.page,
+      query.limit,
       query,
     );
   }
@@ -77,14 +75,13 @@ export class TasksController {
   @ApiQuery({ name: "limit", required: false })
   @ApiQuery({ name: "status", required: false, enum: TaskStatus })
   getAssigned(
-    @Query() pagination: PaginationDto,
     @Query() query: TaskQueryDto,
     @CurrentUser() user: JwtPayload,
   ) {
     return this.tasksService.getAssigned(
       user.sub,
-      pagination.page,
-      pagination.limit,
+      query.page,
+      query.limit,
       query,
     );
   }

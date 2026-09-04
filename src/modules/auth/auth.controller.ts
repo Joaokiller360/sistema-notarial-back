@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Patch,
@@ -72,6 +73,14 @@ export class AuthController {
       user.exp,
       ip,
     );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Get("me")
+  @ApiOperation({ summary: "Perfil del usuario autenticado (roles, permisos, flags)" })
+  me(@CurrentUser() user: JwtPayload) {
+    return this.authService.getMe(user.sub);
   }
 
   @UseGuards(JwtAuthGuard)

@@ -31,6 +31,7 @@ import { NotariesModule } from "./modules/notaries/notaries.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { TasksModule } from "./modules/tasks/tasks.module";
 import { NewsModule } from "./modules/news/news.module";
+import { UafeFormsModule } from "./modules/uafe-forms/uafe-forms.module";
 
 @Module({
   imports: [
@@ -93,6 +94,7 @@ import { NewsModule } from "./modules/news/news.module";
     NotificationsModule,
     TasksModule,
     NewsModule,
+    UafeFormsModule,
   ],
   providers: [
     // Apply ThrottlerGuard globally — skippable per route with @SkipThrottle()

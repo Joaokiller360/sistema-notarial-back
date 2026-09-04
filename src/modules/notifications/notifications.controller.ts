@@ -75,14 +75,13 @@ export class NotificationsController {
   @ApiQuery({ name: "from", required: false })
   @ApiQuery({ name: "to", required: false })
   getSent(
-    @Query() pagination: PaginationDto,
     @Query() query: NotificationQueryDto,
     @CurrentUser() user: JwtPayload,
   ) {
     return this.notificationsService.getSent(
       user.sub,
-      pagination.page,
-      pagination.limit,
+      query.page,
+      query.limit,
       query,
     );
   }
