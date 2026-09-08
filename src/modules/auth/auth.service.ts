@@ -69,7 +69,58 @@ export class AuthService {
       user?.password ?? DUMMY_HASH,
     );
 
+    // Account locked by too many failed attempts — only a SUPER_ADMIN or NOTARIO
+    // can unlock it (POST /auth/unlock-account).
+    if (user && user.lockedAt) {
+      this.securityLogger.accountLocked(ip, dto.email, user.failedLoginAttempts);
+      await this.logs.log({
+        userId: user.id,
+        action: "LOGIN_BLOCKED_LOCKED",
+        resource: "auth",
+        ip,
+        userAgent,
+        details: { email: dto.email },
+      });
+      throw new ForbiddenException(
+        "Cuenta bloqueada por múltiples intentos fallidos. Contacta a un administrador o notario para desbloquearla.",
+      );
+    }
+
     if (!user || !user.isActive || !passwordMatch) {
+      // Count consecutive failures for a real, active account and lock it once
+      // the configured threshold is reached.
+      if (user && user.isActive && !passwordMatch) {
+        const maxAttempts =
+          this.config.get<number>("app.loginMaxAttempts") ?? 5;
+        const updated = await this.prisma.user.update({
+          where: { id: user.id },
+          data: { failedLoginAttempts: { increment: 1 } },
+          select: { failedLoginAttempts: true },
+        });
+        if (updated.failedLoginAttempts >= maxAttempts) {
+          await this.prisma.user.update({
+            where: { id: user.id },
+            data: { lockedAt: new Date() },
+          });
+          this.securityLogger.accountLocked(
+            ip,
+            dto.email,
+            updated.failedLoginAttempts,
+          );
+          await this.logs.log({
+            userId: user.id,
+            action: "ACCOUNT_LOCKED",
+            resource: "auth",
+            ip,
+            userAgent,
+            details: {
+              email: dto.email,
+              attempts: updated.failedLoginAttempts,
+            },
+          });
+        }
+      }
+
       this.securityLogger.loginFailed(ip, dto.email, !user ? "user_not_found" : !user.isActive ? "user_inactive" : "wrong_password");
       await this.logs.log({
         action: "LOGIN_FAILED",
@@ -90,11 +141,30 @@ export class AuthService {
       ),
     ];
 
+    // Single-device enforcement: bump the session epoch and revoke every prior
+    // refresh token so any other logged-in device is cut off immediately — its
+    // access token stops validating once the epoch no longer matches, and its
+    // next /auth/refresh is rejected as a superseded session.
+    const nextEpoch = user.sessionEpoch + 1;
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        failedLoginAttempts: 0,
+        lockedAt: null,
+        sessionEpoch: nextEpoch,
+      },
+    });
+    await this.prisma.refreshToken.updateMany({
+      where: { userId: user.id, isRevoked: false },
+      data: { isRevoked: true },
+    });
+
     const tokens = await this.generateTokens(
       user.id,
       user.email,
       roles,
       permissions,
+      nextEpoch,
     );
 
     await this.logs.log({
@@ -174,6 +244,21 @@ export class AuthService {
   ): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
     const tokenHash = hashToken(refreshToken);
 
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, isActive: true, deletedAt: null },
+      include: {
+        userRoles: {
+          include: {
+            role: {
+              include: { rolePermissions: { include: { permission: true } } },
+            },
+          },
+        },
+      },
+    });
+
+    if (!user) throw new UnauthorizedException("Usuario no encontrado");
+
     // ATOMIC revocation: UPDATE ... WHERE isRevoked = false returns count=1 only
     // for the first concurrent request. Subsequent requests get count=0 → replay detected.
     // This eliminates the TOCTOU race between read-then-update patterns.
@@ -188,6 +273,22 @@ export class AuthService {
       const existing = await this.prisma.refreshToken.findFirst({
         where: { token: tokenHash, userId },
       });
+
+      // A newer login on another device already revoked this token and bumped the
+      // session epoch. This is the single-device cut-off, NOT a replay attack —
+      // don't escalate or nuke every session, just tell the client to log in again.
+      if (existing && existing.sessionEpoch !== user.sessionEpoch) {
+        this.securityLogger.sessionSuperseded(userId, ip);
+        await this.logs.log({
+          userId,
+          action: "SESSION_SUPERSEDED",
+          resource: "auth",
+          ip,
+        });
+        throw new UnauthorizedException(
+          "Sesión iniciada en otro dispositivo. Inicia sesión nuevamente.",
+        );
+      }
 
       if (existing?.isRevoked) {
         // Token was previously valid but already consumed → replay attack.
@@ -221,20 +322,19 @@ export class AuthService {
       throw new UnauthorizedException("Refresh token expirado");
     }
 
-    const user = await this.prisma.user.findFirst({
-      where: { id: userId, isActive: true, deletedAt: null },
-      include: {
-        userRoles: {
-          include: {
-            role: {
-              include: { rolePermissions: { include: { permission: true } } },
-            },
-          },
-        },
-      },
-    });
-
-    if (!user) throw new UnauthorizedException("Usuario no encontrado");
+    // Valid token but from a session superseded by a newer login elsewhere.
+    if (stored.sessionEpoch !== user.sessionEpoch) {
+      this.securityLogger.sessionSuperseded(userId, ip);
+      await this.logs.log({
+        userId,
+        action: "SESSION_SUPERSEDED",
+        resource: "auth",
+        ip,
+      });
+      throw new UnauthorizedException(
+        "Sesión iniciada en otro dispositivo. Inicia sesión nuevamente.",
+      );
+    }
 
     const roles = user.userRoles.map((ur) => ur.role.type as string);
     const permissions = [
@@ -250,7 +350,12 @@ export class AuthService {
     const newRefreshHash = hashToken(newRefreshRaw);
 
     await this.prisma.refreshToken.create({
-      data: { token: newRefreshHash, userId, expiresAt: stored.expiresAt },
+      data: {
+        token: newRefreshHash,
+        userId,
+        expiresAt: stored.expiresAt,
+        sessionEpoch: user.sessionEpoch,
+      },
     });
 
     const accessToken = this.generateAccessToken(
@@ -258,6 +363,7 @@ export class AuthService {
       user.email,
       roles,
       permissions,
+      user.sessionEpoch,
     );
     const expiresIn = this.getAccessTokenExpiry();
 
@@ -295,6 +401,37 @@ export class AuthService {
     });
   }
 
+  // ─── UNLOCK ACCOUNT (SUPER_ADMIN / NOTARIO) ─────────────────────────────────
+  // Clears a lockout caused by too many failed login attempts. Role is enforced
+  // by RolesGuard on the controller (@RequireRoles SUPER_ADMIN, NOTARIO).
+
+  async unlockAccount(
+    requesterId: string,
+    targetUserId: string,
+    ip: string,
+  ): Promise<{ success: true; message: string }> {
+    const target = await this.prisma.user.findFirst({
+      where: { id: targetUserId, deletedAt: null },
+    });
+    if (!target) throw new NotFoundException("Usuario no encontrado");
+
+    await this.prisma.user.update({
+      where: { id: targetUserId },
+      data: { failedLoginAttempts: 0, lockedAt: null },
+    });
+
+    this.securityLogger.accountUnlocked(requesterId, targetUserId, ip);
+    await this.logs.log({
+      userId: requesterId,
+      action: "ACCOUNT_UNLOCKED",
+      resource: "users",
+      resourceId: targetUserId,
+      ip,
+    });
+
+    return { success: true, message: "Cuenta desbloqueada correctamente" };
+  }
+
   // ─── CHANGE PASSWORD ─────────────────────────────────────────────────────────
 
   async changePassword(
@@ -315,7 +452,7 @@ export class AuthService {
 
     await this.prisma.user.update({
       where: { id: userId },
-      data: { password: hashed },
+      data: { password: hashed, sessionEpoch: { increment: 1 } },
     });
     await this.logoutAll(userId);
 
@@ -365,7 +502,7 @@ export class AuthService {
 
     await this.prisma.user.update({
       where: { id: dto.userId },
-      data: { password: hashed },
+      data: { password: hashed, sessionEpoch: { increment: 1 } },
     });
     await this.logoutAll(dto.userId);
 
@@ -427,12 +564,14 @@ export class AuthService {
     email: string,
     roles: string[],
     permissions: string[],
+    epoch: number,
   ) {
     const accessToken = this.generateAccessToken(
       userId,
       email,
       roles,
       permissions,
+      epoch,
     );
     const refreshRaw = uuidv4();
     const refreshHash = hashToken(refreshRaw);
@@ -443,7 +582,7 @@ export class AuthService {
     expiresAt.setDate(expiresAt.getDate() + this.parseDays(refreshExpiration));
 
     await this.prisma.refreshToken.create({
-      data: { token: refreshHash, userId, expiresAt },
+      data: { token: refreshHash, userId, expiresAt, sessionEpoch: epoch },
     });
 
     // Purge old revoked+expired tokens for this user (housekeeping)
@@ -451,18 +590,8 @@ export class AuthService {
       where: { userId, isRevoked: true, expiresAt: { lt: new Date() } },
     });
 
-    // Enforce max 5 active sessions per user
-    const activeSessions = await this.prisma.refreshToken.findMany({
-      where: { userId, isRevoked: false, expiresAt: { gt: new Date() } },
-      orderBy: { createdAt: "asc" },
-    });
-    if (activeSessions.length > 5) {
-      const toRevoke = activeSessions.slice(0, activeSessions.length - 5);
-      await this.prisma.refreshToken.updateMany({
-        where: { id: { in: toRevoke.map((t) => t.id) } },
-        data: { isRevoked: true },
-      });
-    }
+    // Single-device: the caller (login) has already revoked every prior refresh
+    // token, so there is no multi-session trimming to do here.
 
     return { accessToken, refreshToken: refreshRaw, expiresIn };
   }
@@ -472,10 +601,11 @@ export class AuthService {
     email: string,
     roles: string[],
     permissions: string[],
+    epoch: number,
   ): string {
     const jti = uuidv4();
     return this.jwt.sign(
-      { sub: userId, email, roles, permissions, jti },
+      { sub: userId, email, roles, permissions, jti, epoch },
       {
         secret: this.config.get<string>("jwt.accessSecret"),
         expiresIn: this.config.get<string>("jwt.accessExpiration") || "15m",

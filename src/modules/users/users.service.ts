@@ -24,6 +24,8 @@ const USER_SELECT = {
   lastName: true,
   isActive: true,
   pdfDownloadDisabled: true,
+  failedLoginAttempts: true,
+  lockedAt: true,
   createdAt: true,
   updatedAt: true,
   userRoles: {

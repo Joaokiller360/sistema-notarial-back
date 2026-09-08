@@ -6,6 +6,9 @@ export interface JwtPayload {
   roles: string[];
   permissions: string[];
   jti: string;   // JWT ID — required for logout denylist
+  // Session epoch carried in the token. JwtStrategy rejects the token when it no
+  // longer matches User.sessionEpoch (single-device enforcement).
+  epoch?: number;
   // Resolved from DB on every request by JwtStrategy (not carried in the token).
   // true = user may not download/print archive PDFs.
   pdfDownloadDisabled?: boolean;

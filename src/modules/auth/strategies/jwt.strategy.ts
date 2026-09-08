@@ -45,6 +45,15 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
       throw new UnauthorizedException("Usuario no encontrado o inactivo");
     }
 
+    // Single-device enforcement: a newer login (or a password change) bumps
+    // User.sessionEpoch, leaving every previously issued access token stale.
+    // Tokens minted before this feature carry no `epoch` claim → treated as 0.
+    if ((payload.epoch ?? 0) !== user.sessionEpoch) {
+      throw new UnauthorizedException(
+        "Sesión iniciada en otro dispositivo",
+      );
+    }
+
     const roles = user.userRoles.map((ur) => ur.role.type);
     const permissions = [
       ...new Set(
@@ -60,6 +69,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
       roles,
       permissions,
       pdfDownloadDisabled: user.pdfDownloadDisabled,
+      epoch: user.sessionEpoch,
       jti: payload.jti,
       exp: payload.exp,
     } as JwtPayload;

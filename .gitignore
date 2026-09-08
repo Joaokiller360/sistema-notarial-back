@@ -10,6 +10,9 @@ build/
 .env.local
 .env.production
 
+# Documentation
+/documentacion_back/
+
 # Logs
 /logs/
 *.log
@@ -37,3 +40,6 @@ coverage/
 
 # Docker volumes
 postgres_data/
+
+#claude
+/.claude/

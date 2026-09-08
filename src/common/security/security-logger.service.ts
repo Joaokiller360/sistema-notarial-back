@@ -32,6 +32,36 @@ export class SecurityLoggerService {
     });
   }
 
+  accountLocked(ip: string, email: string, attempts: number): void {
+    this.emit({
+      event: "AUTH_ACCOUNT_LOCKED",
+      severity: "HIGH",
+      ip,
+      email,
+      details: { attempts },
+    });
+  }
+
+  accountUnlocked(requesterId: string, targetId: string, ip: string): void {
+    this.emit({
+      event: "AUTH_ACCOUNT_UNLOCKED",
+      severity: "MEDIUM",
+      userId: requesterId,
+      ip,
+      details: { targetUserId: targetId },
+    });
+  }
+
+  sessionSuperseded(userId: string, ip: string): void {
+    this.emit({
+      event: "AUTH_SESSION_SUPERSEDED",
+      severity: "LOW",
+      userId,
+      ip,
+      details: { reason: "Nuevo login en otro dispositivo" },
+    });
+  }
+
   replayAttackDetected(userId: string, ip: string): void {
     this.emit({
       event: "AUTH_REPLAY_ATTACK",

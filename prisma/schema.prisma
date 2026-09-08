@@ -54,6 +54,15 @@ model User {
   isActive  Boolean   @default(true) @map("is_active")
   // true = el usuario NO puede descargar / imprimir / abrir en pestaña nueva los PDF
   pdfDownloadDisabled Boolean @default(false) @map("pdf_download_disabled")
+  // Contador de intentos de login fallidos consecutivos. Se resetea a 0 tras un login correcto.
+  failedLoginAttempts Int      @default(0) @map("failed_login_attempts")
+  // Si no es null, la cuenta está bloqueada por exceso de intentos fallidos.
+  // Solo un SUPER_ADMIN o NOTARIO puede desbloquearla (POST /auth/unlock-account).
+  lockedAt            DateTime? @map("locked_at")
+  // Época de sesión. Se incrementa en cada login y en cambios de contraseña.
+  // El access token lleva este valor como claim `epoch`; si no coincide con el de
+  // la BD, el token se rechaza → fuerza sesión única por usuario (un solo dispositivo).
+  sessionEpoch        Int      @default(0) @map("session_epoch")
   deletedAt DateTime? @map("deleted_at")
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -79,6 +88,10 @@ model RefreshToken {
   userId    String   @map("user_id")
   expiresAt DateTime @map("expires_at")
   isRevoked Boolean  @default(false) @map("is_revoked")
+  // Época de sesión en la que se emitió este refresh token. En /auth/refresh, si
+  // no coincide con User.sessionEpoch significa que hubo un login más nuevo en
+  // otro dispositivo → se rechaza sin escalar a "replay attack".
+  sessionEpoch Int    @default(0) @map("session_epoch")
   createdAt DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

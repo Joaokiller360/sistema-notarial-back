@@ -36,6 +36,9 @@ export const envValidationSchema = Joi.object({
   THROTTLE_TTL: Joi.number().default(60),
   THROTTLE_LIMIT: Joi.number().default(100),
 
+  // Login lockout — intentos fallidos consecutivos antes de bloquear la cuenta
+  LOGIN_MAX_ATTEMPTS: Joi.number().min(1).default(5),
+
   // Upload
   UPLOAD_DEST: Joi.string().default("./uploads"),
   MAX_FILE_SIZE: Joi.number().default(10485760),

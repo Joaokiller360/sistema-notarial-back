@@ -11,18 +11,22 @@ import {
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
+import { RoleType } from "@prisma/client";
 import { Request } from "express";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
 import { ChangePasswordDto, ResetPasswordDto } from "./dto/change-password.dto";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
+import { UnlockAccountDto } from "./dto/unlock-account.dto";
 import {
   CurrentUser,
   JwtPayload,
 } from "../../common/decorators/current-user.decorator";
 import { Public } from "../../common/decorators/public.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
+import { RolesGuard } from "../../common/guards/roles.guard";
 import { RequirePermissions } from "../../common/decorators/permissions.decorator";
+import { RequireRoles } from "../../common/decorators/roles.decorator";
 
 @ApiTags("Auth")
 @Controller("auth")
@@ -128,6 +132,24 @@ export class AuthController {
   ) {
     const ip = req.ip || req.socket.remoteAddress || "";
     return this.authService.changePassword(user.sub, dto, ip);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @RequireRoles(RoleType.SUPER_ADMIN, RoleType.NOTARIO)
+  @ApiBearerAuth()
+  @Post("unlock-account")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      "Desbloquear una cuenta bloqueada por intentos fallidos (SUPER_ADMIN / NOTARIO)",
+  })
+  unlockAccount(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: UnlockAccountDto,
+    @Req() req: Request,
+  ) {
+    const ip = req.ip || req.socket.remoteAddress || "";
+    return this.authService.unlockAccount(user.sub, dto.userId, ip);
   }
 
   @UseGuards(JwtAuthGuard)

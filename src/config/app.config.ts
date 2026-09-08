@@ -7,6 +7,8 @@ export default registerAs("app", () => ({
   corsOrigins: (process.env.CORS_ORIGINS || "http://localhost:3000").split(","),
   throttleTtl: parseInt(process.env.THROTTLE_TTL || "60", 10),
   throttleLimit: parseInt(process.env.THROTTLE_LIMIT || "100", 10),
+  // Nº de intentos de login fallidos consecutivos antes de bloquear la cuenta.
+  loginMaxAttempts: parseInt(process.env.LOGIN_MAX_ATTEMPTS || "5", 10),
   systemName: process.env.SYSTEM_NAME || "Notaria Sistema",
   systemVersion: process.env.SYSTEM_VERSION || "1.0.0",
 }));
