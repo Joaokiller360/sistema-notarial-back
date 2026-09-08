@@ -39,6 +39,9 @@ export const envValidationSchema = Joi.object({
   // Login lockout — intentos fallidos consecutivos antes de bloquear la cuenta
   LOGIN_MAX_ATTEMPTS: Joi.number().min(1).default(5),
 
+  // Sesión única — minutos de inactividad antes de considerar la sesión abandonada
+  SESSION_IDLE_MINUTES: Joi.number().min(1).default(15),
+
   // Upload
   UPLOAD_DEST: Joi.string().default("./uploads"),
   MAX_FILE_SIZE: Joi.number().default(10485760),

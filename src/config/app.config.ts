@@ -9,6 +9,10 @@ export default registerAs("app", () => ({
   throttleLimit: parseInt(process.env.THROTTLE_LIMIT || "100", 10),
   // Nº de intentos de login fallidos consecutivos antes de bloquear la cuenta.
   loginMaxAttempts: parseInt(process.env.LOGIN_MAX_ATTEMPTS || "5", 10),
+  // Minutos de inactividad tras los cuales una sesión se considera abandonada y
+  // otro login puede tomar su lugar. Dentro de esta ventana, un segundo login se
+  // rechaza (409) mientras la sesión original siga activa.
+  sessionIdleMinutes: parseInt(process.env.SESSION_IDLE_MINUTES || "15", 10),
   systemName: process.env.SYSTEM_NAME || "Notaria Sistema",
   systemVersion: process.env.SYSTEM_VERSION || "1.0.0",
 }));

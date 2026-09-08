@@ -18,6 +18,7 @@ import { LoginDto } from "./dto/login.dto";
 import { ChangePasswordDto, ResetPasswordDto } from "./dto/change-password.dto";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
 import { UnlockAccountDto } from "./dto/unlock-account.dto";
+import { ForceLogoutDto } from "./dto/force-logout.dto";
 import {
   CurrentUser,
   JwtPayload,
@@ -150,6 +151,24 @@ export class AuthController {
   ) {
     const ip = req.ip || req.socket.remoteAddress || "";
     return this.authService.unlockAccount(user.sub, dto.userId, ip);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @RequireRoles(RoleType.SUPER_ADMIN, RoleType.NOTARIO)
+  @ApiBearerAuth()
+  @Post("force-logout")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      "Cerrar a la fuerza la sesión activa de un usuario para que pueda volver a entrar (SUPER_ADMIN / NOTARIO)",
+  })
+  forceLogout(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: ForceLogoutDto,
+    @Req() req: Request,
+  ) {
+    const ip = req.ip || req.socket.remoteAddress || "";
+    return this.authService.forceLogout(user.sub, dto.userId, ip);
   }
 
   @UseGuards(JwtAuthGuard)

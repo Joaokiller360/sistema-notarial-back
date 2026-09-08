@@ -52,6 +52,26 @@ export class SecurityLoggerService {
     });
   }
 
+  loginBlockedActiveSession(ip: string, email: string): void {
+    this.emit({
+      event: "AUTH_LOGIN_BLOCKED_ACTIVE_SESSION",
+      severity: "MEDIUM",
+      ip,
+      email,
+      details: { reason: "Ya existe una sesión activa para este usuario" },
+    });
+  }
+
+  sessionForceClosed(requesterId: string, targetId: string, ip: string): void {
+    this.emit({
+      event: "AUTH_SESSION_FORCE_CLOSED",
+      severity: "MEDIUM",
+      userId: requesterId,
+      ip,
+      details: { targetUserId: targetId },
+    });
+  }
+
   sessionSuperseded(userId: string, ip: string): void {
     this.emit({
       event: "AUTH_SESSION_SUPERSEDED",

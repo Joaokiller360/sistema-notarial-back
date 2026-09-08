@@ -63,6 +63,12 @@ model User {
   // El access token lleva este valor como claim `epoch`; si no coincide con el de
   // la BD, el token se rechaza → fuerza sesión única por usuario (un solo dispositivo).
   sessionEpoch        Int      @default(0) @map("session_epoch")
+  // Marca de última actividad autenticada. Se actualiza en cada request válido
+  // (como mucho 1 vez/min) y en /auth/refresh. Sirve para saber si la sesión
+  // sigue "viva": un segundo login se rechaza mientras exista un refresh token
+  // vigente y lastSeenAt esté dentro de la ventana SESSION_IDLE_MINUTES.
+  // null = sin sesión / sesión abandonada → el siguiente login puede tomar su lugar.
+  lastSeenAt         DateTime? @map("last_seen_at")
   deletedAt DateTime? @map("deleted_at")
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")

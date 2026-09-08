@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -141,10 +142,44 @@ export class AuthService {
       ),
     ];
 
-    // Single-device enforcement: bump the session epoch and revoke every prior
-    // refresh token so any other logged-in device is cut off immediately — its
-    // access token stops validating once the epoch no longer matches, and its
-    // next /auth/refresh is rejected as a superseded session.
+    // ─── Sesión única: la primera sesión gana ───────────────────────────────
+    // Si el usuario ya tiene una sesión ACTIVA (refresh token vigente + actividad
+    // dentro de la ventana SESSION_IDLE_MINUTES) este login se rechaza y la sesión
+    // original NO se toca. Cuando esa sesión cierra sesión, expira su refresh
+    // token, o queda inactiva más que la ventana, el siguiente login entra y
+    // toma su lugar (bump de epoch + revocación abajo).
+    const idleMinutes =
+      this.config.get<number>("app.sessionIdleMinutes") ?? 15;
+    const idleCutoff = new Date(Date.now() - idleMinutes * 60_000);
+    const activeSession = await this.prisma.refreshToken.findFirst({
+      where: {
+        userId: user.id,
+        isRevoked: false,
+        expiresAt: { gt: new Date() },
+      },
+      select: { id: true },
+    });
+    const recentlyActive =
+      user.lastSeenAt != null && user.lastSeenAt > idleCutoff;
+    if (activeSession && recentlyActive) {
+      this.securityLogger.loginBlockedActiveSession(ip, dto.email);
+      await this.logs.log({
+        userId: user.id,
+        action: "LOGIN_BLOCKED_ACTIVE_SESSION",
+        resource: "auth",
+        ip,
+        userAgent,
+        details: { email: dto.email },
+      });
+      throw new ConflictException(
+        "Ya hay una sesión activa para este usuario en otro dispositivo. Cierra esa sesión o espera unos minutos e inténtalo de nuevo.",
+      );
+    }
+
+    // Sesión anterior abandonada / inexistente: este login la reemplaza. Se
+    // incrementa la época de sesión y se revoca todo refresh token previo para
+    // cortar cualquier otro dispositivo al instante — su access token deja de
+    // validar al no coincidir la época, y su próximo /auth/refresh se rechaza.
     const nextEpoch = user.sessionEpoch + 1;
     await this.prisma.user.update({
       where: { id: user.id },
@@ -152,6 +187,7 @@ export class AuthService {
         failedLoginAttempts: 0,
         lockedAt: null,
         sessionEpoch: nextEpoch,
+        lastSeenAt: new Date(),
       },
     });
     await this.prisma.refreshToken.updateMany({
@@ -358,6 +394,12 @@ export class AuthService {
       },
     });
 
+    // La sesión sigue viva — refresca la marca de actividad para la sesión única.
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { lastSeenAt: new Date() },
+    });
+
     const accessToken = this.generateAccessToken(
       user.id,
       user.email,
@@ -390,6 +432,12 @@ export class AuthService {
       await this.denylist.deny(jti, exp);
       this.securityLogger.tokenRevoked(userId, jti);
     }
+
+    // Marca la sesión como cerrada para que otro login pueda entrar de inmediato.
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { lastSeenAt: null },
+    });
 
     await this.logs.log({ userId, action: "LOGOUT", resource: "auth", ip });
   }
@@ -430,6 +478,44 @@ export class AuthService {
     });
 
     return { success: true, message: "Cuenta desbloqueada correctamente" };
+  }
+
+  // ─── FORCE LOGOUT (SUPER_ADMIN / NOTARIO) ───────────────────────────────────
+  // Cierra a la fuerza la sesión activa de otro usuario: revoca sus refresh
+  // tokens, incrementa sessionEpoch (invalida sus access tokens al instante) y
+  // limpia lastSeenAt, de modo que ese usuario pueda volver a iniciar sesión de
+  // inmediato aunque su sesión anterior nunca hiciera logout.
+
+  async forceLogout(
+    requesterId: string,
+    targetUserId: string,
+    ip: string,
+  ): Promise<{ success: true; message: string }> {
+    const target = await this.prisma.user.findFirst({
+      where: { id: targetUserId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!target) throw new NotFoundException("Usuario no encontrado");
+
+    await this.prisma.user.update({
+      where: { id: targetUserId },
+      data: { sessionEpoch: { increment: 1 }, lastSeenAt: null },
+    });
+    await this.prisma.refreshToken.updateMany({
+      where: { userId: targetUserId, isRevoked: false },
+      data: { isRevoked: true },
+    });
+
+    this.securityLogger.sessionForceClosed(requesterId, targetUserId, ip);
+    await this.logs.log({
+      userId: requesterId,
+      action: "SESSION_FORCE_CLOSED",
+      resource: "users",
+      resourceId: targetUserId,
+      ip,
+    });
+
+    return { success: true, message: "Sesión cerrada correctamente" };
   }
 
   // ─── CHANGE PASSWORD ─────────────────────────────────────────────────────────

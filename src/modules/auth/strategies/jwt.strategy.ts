@@ -54,6 +54,16 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
       );
     }
 
+    // Marca de actividad para la sesión única. Se escribe como mucho una vez por
+    // minuto para no golpear la BD en cada request autenticado.
+    const now = Date.now();
+    if (!user.lastSeenAt || now - user.lastSeenAt.getTime() > 60_000) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { lastSeenAt: new Date(now) },
+      });
+    }
+
     const roles = user.userRoles.map((ur) => ur.role.type);
     const permissions = [
       ...new Set(
