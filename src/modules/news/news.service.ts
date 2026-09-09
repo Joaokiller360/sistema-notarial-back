@@ -129,5 +129,10 @@ export class NewsService {
     }
 
     await this.prisma.news.delete({ where: { id } });
+
+    // Real-time: la noticia deja de existir para todos → broadcast a los
+    // conectados. No-op si nadie escucha; el GET /news al recargar ya trae la
+    // lista correcta.
+    this.realtime.emitToAll("news:deleted", { id });
   }
 }
