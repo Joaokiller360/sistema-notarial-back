@@ -184,6 +184,17 @@ export class NotificationsService {
       include: { sender: SENDER_SELECT },
     });
 
+    // Real-time: avisa al remitente que su notificación fue leída. No-op si
+    // el remitente no está conectado (el GET /notifications/sent al recargar
+    // ya trae el estado correcto). Sólo en la primera lectura.
+    if (!notification.read) {
+      this.realtime.emitToUser(updated.senderId, "notification:read", {
+        id: updated.id,
+        read: true,
+        readAt: new Date().toISOString(),
+      });
+    }
+
     const nameMap = await this.fetchUserNames(
       updated.recipientId !== "ALL" ? [updated.recipientId] : [],
     );
@@ -196,13 +207,33 @@ export class NotificationsService {
   }
 
   async markAllRead(userId: string) {
+    const where = {
+      OR: [{ recipientId: userId }, { recipientId: "ALL" }],
+      read: false,
+    };
+
+    // Capturamos remitentes ANTES del updateMany para poder avisarles.
+    const unread = await this.prisma.notification.findMany({
+      where,
+      select: { id: true, senderId: true },
+    });
+
     const result = await this.prisma.notification.updateMany({
-      where: {
-        OR: [{ recipientId: userId }, { recipientId: "ALL" }],
-        read: false,
-      },
+      where,
       data: { read: true },
     });
+
+    // Real-time: un notification:read por notificación a su remitente.
+    // No-op si el remitente no está conectado.
+    const readAt = new Date().toISOString();
+    for (const n of unread) {
+      this.realtime.emitToUser(n.senderId, "notification:read", {
+        id: n.id,
+        read: true,
+        readAt,
+      });
+    }
+
     return { updated: result.count };
   }
 

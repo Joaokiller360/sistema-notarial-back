@@ -155,6 +155,17 @@ export class TasksService {
       data: { readByRecipient: true },
       include: TASK_INCLUDE,
     });
+
+    // Real-time: avisa a quien asignó la tarea que fue leída. No-op si no está
+    // conectado. Sólo en la primera lectura.
+    if (!task.readByRecipient) {
+      this.realtime.emitToUser(updated.senderId, "task:read", {
+        taskId: updated.id,
+        readByRecipient: true,
+        readAt: new Date().toISOString(),
+      });
+    }
+
     return this.format(updated);
   }
 
