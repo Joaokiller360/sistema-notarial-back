@@ -31,7 +31,7 @@ export class FilesController {
   constructor(private readonly s3: S3Service) {}
 
   @Post("upload-url")
-  @Throttle({ upload: { limit: 10, ttl: 60000 } })
+  @Throttle({ short: { limit: 20, ttl: 60_000 } })
   @ApiOperation({
     summary: "Generar presigned URL para subir un PDF a S3",
     description:
@@ -63,7 +63,8 @@ export class FilesController {
   }
 
   @Get("view-url")
-  @Throttle({ global: { limit: 60, ttl: 60000 } })
+  // presigned view URLs: una galería puede pedir varias de golpe.
+  @Throttle({ short: { limit: 100, ttl: 60_000 } })
   @ApiOperation({
     summary: "Generar presigned URL para ver/descargar un archivo de S3",
     description: "Retorna una URL GET pre-firmada válida por 1 hora.",

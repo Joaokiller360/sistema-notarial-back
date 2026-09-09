@@ -198,7 +198,7 @@ export class ArchivesController {
   @RequirePermissions("archives:update")
   @HttpCode(HttpStatus.OK)
   // 10 uploads/minute per IP — prevents DoS via repeated large uploads
-  @Throttle({ upload: { limit: 10, ttl: 60000 } })
+  @Throttle({ short: { limit: 20, ttl: 60_000 } })
   @ApiOperation({ summary: "Subir PDF al archivo notarial (almacenado en S3)" })
   @ApiConsumes("multipart/form-data")
   @ApiBody({
@@ -252,7 +252,8 @@ export class ArchivesController {
   @RequirePermissions("archives:update")
   @HttpCode(HttpStatus.OK)
   // 3 generate-pdf/minute per IP — heavy CPU/memory operation
-  @Throttle({ pdf: { limit: 3, ttl: 60000 } })
+  // Generación de PDF es cara — se mantiene bajo, pero aislado por-ruta.
+  @Throttle({ short: { limit: 10, ttl: 60_000 } })
   @ApiOperation({
     summary: "Generar PDF a partir de imágenes (JPG/PNG)",
     description:

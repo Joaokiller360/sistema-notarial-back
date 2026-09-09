@@ -96,7 +96,7 @@ export class NewsController {
   @Patch(":id")
   @UseGuards(RolesGuard)
   @RequireRoles(RoleType.SUPER_ADMIN, RoleType.NOTARIO)
-  @Throttle({ upload: { limit: 5, ttl: 60000 } })
+  @Throttle({ short: { limit: 15, ttl: 60_000 } })
   @ApiOperation({ summary: "Actualizar noticia con imagen opcional (máx. 5MB)" })
   @ApiConsumes("multipart/form-data")
   @ApiBody({ type: UpdateNewsDto })
@@ -145,7 +145,7 @@ export class NewsController {
   @RequireRoles(RoleType.SUPER_ADMIN, RoleType.NOTARIO)
   @HttpCode(HttpStatus.CREATED)
   // 5 news posts/min — news creation is infrequent; prevents memory exhaustion via uploads
-  @Throttle({ upload: { limit: 5, ttl: 60000 } })
+  @Throttle({ short: { limit: 15, ttl: 60_000 } })
   @ApiOperation({ summary: "Crear noticia con imagen opcional (máx. 5MB)" })
   @ApiConsumes("multipart/form-data")
   @ApiBody({ type: CreateNewsDto })

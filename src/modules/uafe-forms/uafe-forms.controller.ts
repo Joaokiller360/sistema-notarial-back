@@ -130,7 +130,7 @@ export class UafeFormsController {
   // ─── COMPROBANTES ───────────────────────────────────────────────────────────
 
   @Post(":id/comprobantes")
-  @Throttle({ upload: { limit: 10, ttl: 60000 } })
+  @Throttle({ short: { limit: 20, ttl: 60_000 } })
   @ApiOperation({ summary: "Subir 1–5 imágenes de comprobantes de pago (JPG/PNG)" })
   @ApiConsumes("multipart/form-data")
   @ApiBody({

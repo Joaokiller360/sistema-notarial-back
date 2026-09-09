@@ -10,7 +10,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { SkipThrottle, Throttle } from "@nestjs/throttler";
+import { Throttle } from "@nestjs/throttler";
 import { RoleType } from "@prisma/client";
 import { Request } from "express";
 import { AuthService } from "./auth.service";
@@ -37,8 +37,8 @@ export class AuthController {
   @Public()
   @Post("login")
   @HttpCode(HttpStatus.OK)
-  // 5 attempts/min per IP — protects against brute force
-  @Throttle({ login: { limit: 5, ttl: 60000 } })
+  // 5 intentos/min por IP — anti fuerza bruta. Aprieta SOLO esta ruta.
+  @Throttle({ short: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: "Iniciar sesión" })
   login(@Body() dto: LoginDto, @Req() req: Request) {
     const ip = req.ip || req.socket.remoteAddress || "";
@@ -49,8 +49,8 @@ export class AuthController {
   @Public()
   @Post("refresh")
   @HttpCode(HttpStatus.OK)
-  // 10 refreshes/min per IP — prevents automated token harvesting
-  @Throttle({ refresh: { limit: 10, ttl: 60000 } })
+  // 20 refresh/min por IP — varias pestañas pueden renovar a la vez.
+  @Throttle({ short: { limit: 20, ttl: 60_000 } })
   @ApiOperation({ summary: "Renovar tokens usando refresh token (rotación)" })
   refresh(
     @Body() body: { userId: string; refreshToken: string },
@@ -83,11 +83,8 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @Get("me")
-  // Decouple from the other AuthController limiters: every named throttler
-  // (login/refresh/upload/pdf/hourly) applies to every route by default, so
-  // without this /auth/me would be capped by the tightest one (pdf = 3/min).
-  // Skip those and let only "global" (60/min) + "hourly" (500/h) apply.
-  @SkipThrottle({ login: true, refresh: true, upload: true, pdf: true })
+  // Ya no hace falta workaround: los @Throttle por-ruta están aislados por
+  // handler, así que /auth/me solo cuenta contra short/long globales.
   @ApiOperation({ summary: "Perfil del usuario autenticado (roles, permisos, flags)" })
   me(@CurrentUser() user: JwtPayload) {
     return this.authService.getMe(user.sub);

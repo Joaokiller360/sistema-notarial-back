@@ -44,6 +44,13 @@ async function bootstrap() {
     methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+    // Permite al front leer los headers de rate-limit para backoff en el 429.
+    exposedHeaders: [
+      "Retry-After",
+      "X-RateLimit-Limit-short",
+      "X-RateLimit-Remaining-short",
+      "X-RateLimit-Reset-short",
+    ],
   });
 
   // ─── SECURITY HEADERS (Helmet) ───────────────────────────────────────────────
