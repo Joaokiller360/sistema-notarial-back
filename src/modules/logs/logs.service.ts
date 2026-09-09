@@ -30,10 +30,25 @@ export class LogsService {
     }
   }
 
-  async findAll(page = 1, limit = 20, filters?: { userId?: string; action?: string }) {
+  async findAll(
+    page = 1,
+    limit = 20,
+    filters?: {
+      userId?:    string;
+      action?:    string;
+      startDate?: string;
+      endDate?:   string;
+    },
+  ) {
     const where: any = {};
-    if (filters?.userId) where.userId   = filters.userId;
-    if (filters?.action) where.action   = { contains: filters.action, mode: 'insensitive' };
+    if (filters?.userId) where.userId = filters.userId;
+    if (filters?.action) where.action = { contains: filters.action, mode: 'insensitive' };
+
+    if (filters?.startDate || filters?.endDate) {
+      where.createdAt = {};
+      if (filters.startDate) where.createdAt.gte = new Date(filters.startDate);
+      if (filters.endDate)   where.createdAt.lte = new Date(filters.endDate);
+    }
 
     const [data, total] = await this.prisma.$transaction([
       this.prisma.log.findMany({

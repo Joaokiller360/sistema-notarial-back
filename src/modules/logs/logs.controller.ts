@@ -25,6 +25,8 @@ export class LogsController {
     return this.logsService.findAll(query.page, query.limit, {
       userId: query.userId,
       action: query.action,
+      startDate: query.startDate,
+      endDate: query.endDate,
     });
   }
 }
