@@ -10,7 +10,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { Throttle } from "@nestjs/throttler";
+import { SkipThrottle, Throttle } from "@nestjs/throttler";
 import { RoleType } from "@prisma/client";
 import { Request } from "express";
 import { AuthService } from "./auth.service";
@@ -83,6 +83,11 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @Get("me")
+  // Decouple from the other AuthController limiters: every named throttler
+  // (login/refresh/upload/pdf/hourly) applies to every route by default, so
+  // without this /auth/me would be capped by the tightest one (pdf = 3/min).
+  // Skip those and let only "global" (60/min) + "hourly" (500/h) apply.
+  @SkipThrottle({ login: true, refresh: true, upload: true, pdf: true })
   @ApiOperation({ summary: "Perfil del usuario autenticado (roles, permisos, flags)" })
   me(@CurrentUser() user: JwtPayload) {
     return this.authService.getMe(user.sub);
