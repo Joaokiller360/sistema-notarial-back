@@ -11,6 +11,7 @@ import {
   getPrismaSkipTake,
   paginate,
 } from "../../common/utils/pagination.util";
+import { htmlToPlainText } from "../../common/utils/html.util";
 import { RealtimeGateway } from "../realtime/realtime.gateway";
 
 const SENDER_SELECT = { select: { firstName: true, lastName: true } };
@@ -48,8 +49,10 @@ export class NotificationsService {
         : "",
       recipientId: n.recipientId,
       recipientName,
-      subject: n.subject,
-      message: n.message,
+      // Destino texto plano (celda de tabla / toast). Limpia también filas
+      // antiguas que se guardaron con etiquetas HTML crudas.
+      subject: htmlToPlainText(n.subject),
+      message: htmlToPlainText(n.message),
       type: n.type,
       sentAt: n.sentAt,
       read: n.read,
@@ -69,8 +72,10 @@ export class NotificationsService {
       data: {
         senderId,
         recipientId: dto.recipientId,
-        subject: dto.subject,
-        message: dto.message,
+        // Las notificaciones se muestran como texto plano en todos los destinos
+        // (inbox, historial, toast). Se limpia el HTML al guardar.
+        subject: htmlToPlainText(dto.subject),
+        message: htmlToPlainText(dto.message),
         type: dto.type as any,
       },
       include: { sender: SENDER_SELECT },
