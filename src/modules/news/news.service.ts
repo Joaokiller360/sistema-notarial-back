@@ -4,6 +4,7 @@ import { S3Service } from "../../common/s3/s3.service";
 import { CreateNewsDto } from "./dto/create-news.dto";
 import { UpdateNewsDto } from "./dto/update-news.dto";
 import { RealtimeGateway } from "../realtime/realtime.gateway";
+import { stripHtml, sanitizeRichHtml } from "../../common/utils/html.util";
 
 @Injectable()
 export class NewsService {
@@ -12,6 +13,16 @@ export class NewsService {
     private s3: S3Service,
     private realtime: RealtimeGateway,
   ) {}
+
+  /**
+   * Normaliza una fila de noticia para la salida (REST + WS).
+   * - title  → SIEMPRE texto plano (defensa para filas antiguas guardadas con
+   *            HTML; las nuevas ya se guardan limpias).
+   * - description → HTML real, sin tocar (se sanitizó al escribir). NO se escapa.
+   */
+  private formatNews<T extends { title: string; description: string }>(row: T): T {
+    return { ...row, title: stripHtml(row.title) };
+  }
 
   async findAll({ page, limit }: { page: number; limit: number }) {
     const skip = (page - 1) * limit;
@@ -25,7 +36,7 @@ export class NewsService {
     ]);
 
     return {
-      data,
+      data: data.map((n) => this.formatNews(n)),
       total,
       page,
       limit,
@@ -36,7 +47,7 @@ export class NewsService {
   async findOne(id: string) {
     const news = await this.prisma.news.findUnique({ where: { id } });
     if (!news) throw new NotFoundException("Noticia no encontrada");
-    return news;
+    return this.formatNews(news);
   }
 
   async create(dto: CreateNewsDto, image?: Express.Multer.File) {
@@ -60,13 +71,17 @@ export class NewsService {
 
     const news = await this.prisma.news.create({
       data: {
-        title: dto.title,
-        description: dto.description,
+        // title: texto plano por contrato → se quitan todas las etiquetas.
+        title: stripHtml(dto.title),
+        // description: HTML crudo del editor, filtrado por whitelist (fuera
+        // <script>, on*, javascript:). NO se escapa.
+        description: sanitizeRichHtml(dto.description),
         imageUrl,
       },
     });
 
     // Real-time: la noticia es visible para todos → broadcast a los conectados.
+    // Mismo title/description que devuelve el REST (la fila ya está limpia).
     this.realtime.emitToAll("news:published", {
       id: news.id,
       title: news.title,
@@ -103,11 +118,14 @@ export class NewsService {
     }
 
     const data: Record<string, unknown> = {};
-    if (dto.title !== undefined) data.title = dto.title;
-    if (dto.description !== undefined) data.description = dto.description;
+    if (dto.title !== undefined) data.title = stripHtml(dto.title);
+    if (dto.description !== undefined) {
+      data.description = sanitizeRichHtml(dto.description);
+    }
     if (image) data.imageUrl = imageUrl;
 
-    return this.prisma.news.update({ where: { id }, data });
+    const updated = await this.prisma.news.update({ where: { id }, data });
+    return this.formatNews(updated);
   }
 
   async remove(id: string) {

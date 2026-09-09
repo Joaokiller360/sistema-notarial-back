@@ -11,6 +11,7 @@ import {
   getPrismaSkipTake,
   paginate,
 } from "../../common/utils/pagination.util";
+import { stripHtml } from "../../common/utils/html.util";
 import { RealtimeGateway } from "../realtime/realtime.gateway";
 
 const TASK_INCLUDE = {
@@ -34,8 +35,10 @@ export class TasksService {
       recipientName: t.recipient
         ? `${t.recipient.firstName} ${t.recipient.lastName}`
         : "",
-      title: t.title,
-      description: t.description,
+      // Tareas = texto plano en todos los destinos. Limpia también filas
+      // antiguas guardadas con HTML.
+      title: stripHtml(t.title),
+      description: stripHtml(t.description),
       priority: t.priority,
       dueDate: t.dueDate instanceof Date
         ? t.dueDate.toISOString().split("T")[0]
@@ -65,8 +68,9 @@ export class TasksService {
       data: {
         senderId,
         recipientId: dto.recipientId,
-        title: dto.title,
-        description: dto.description,
+        // title / description = texto plano. Se limpia el HTML al guardar.
+        title: stripHtml(dto.title),
+        description: stripHtml(dto.description),
         priority: dto.priority as any,
         dueDate: new Date(dto.dueDate),
         attachmentName: dto.attachment?.name ?? null,
