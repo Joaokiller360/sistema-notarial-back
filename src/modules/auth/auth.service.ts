@@ -14,6 +14,7 @@ import { createHash, randomBytes } from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import { PrismaService } from "../../prisma/prisma.service";
 import { LogsService } from "../logs/logs.service";
+import { RealtimeGateway } from "../realtime/realtime.gateway";
 import { TokenDenylistService } from "../../common/token-denylist/token-denylist.service";
 import { SecurityLoggerService } from "../../common/security/security-logger.service";
 import { LoginDto } from "./dto/login.dto";
@@ -41,6 +42,7 @@ export class AuthService {
     private logs: LogsService,
     private denylist: TokenDenylistService,
     private securityLogger: SecurityLoggerService,
+    private realtime: RealtimeGateway,
   ) {}
 
   // ─── LOGIN ──────────────────────────────────────────────────────────────────
@@ -194,6 +196,8 @@ export class AuthService {
       where: { userId: user.id, isRevoked: false },
       data: { isRevoked: true },
     });
+    // Corta también los sockets del dispositivo anterior (sesión única).
+    this.realtime.disconnectUser(user.id);
 
     const tokens = await this.generateTokens(
       user.id,
@@ -447,6 +451,7 @@ export class AuthService {
       where: { userId },
       data: { isRevoked: true },
     });
+    this.realtime.disconnectUser(userId);
   }
 
   // ─── UNLOCK ACCOUNT (SUPER_ADMIN / NOTARIO) ─────────────────────────────────
@@ -505,6 +510,7 @@ export class AuthService {
       where: { userId: targetUserId, isRevoked: false },
       data: { isRevoked: true },
     });
+    this.realtime.disconnectUser(targetUserId);
 
     this.securityLogger.sessionForceClosed(requesterId, targetUserId, ip);
     await this.logs.log({

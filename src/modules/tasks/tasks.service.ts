@@ -11,6 +11,7 @@ import {
   getPrismaSkipTake,
   paginate,
 } from "../../common/utils/pagination.util";
+import { RealtimeGateway } from "../realtime/realtime.gateway";
 
 const TASK_INCLUDE = {
   sender: { select: { firstName: true, lastName: true } },
@@ -19,7 +20,10 @@ const TASK_INCLUDE = {
 
 @Injectable()
 export class TasksService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private realtime: RealtimeGateway,
+  ) {}
 
   private format(t: any) {
     return {
@@ -72,7 +76,10 @@ export class TasksService {
       include: TASK_INCLUDE,
     });
 
-    return this.format(task);
+    const formatted = this.format(task);
+    // Real-time: avisa al destinatario. No-op si no está conectado.
+    this.realtime.emitToUser(dto.recipientId, "task:assigned", formatted);
+    return formatted;
   }
 
   async getReceived(userId: string, page: number, limit: number, query: TaskQueryDto) {
@@ -123,6 +130,13 @@ export class TasksService {
       where: { id },
       data: { status: status as any },
       include: TASK_INCLUDE,
+    });
+
+    // Real-time: avisa a quien asignó la tarea. No-op si no está conectado.
+    this.realtime.emitToUser(updated.senderId, "task:status-updated", {
+      taskId: updated.id,
+      status: updated.status,
+      updatedAt: new Date().toISOString(),
     });
     return this.format(updated);
   }

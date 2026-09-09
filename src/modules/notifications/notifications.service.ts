@@ -11,12 +11,16 @@ import {
   getPrismaSkipTake,
   paginate,
 } from "../../common/utils/pagination.util";
+import { RealtimeGateway } from "../realtime/realtime.gateway";
 
 const SENDER_SELECT = { select: { firstName: true, lastName: true } };
 
 @Injectable()
 export class NotificationsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private realtime: RealtimeGateway,
+  ) {}
 
   /**
    * Batch-fetch user names for a list of IDs in a single query.
@@ -78,7 +82,15 @@ export class NotificationsService {
         : (await this.fetchUserNames([dto.recipientId])).get(dto.recipientId) ??
           "Desconocido";
 
-    return this.format(notification, recipientName);
+    const payload = this.format(notification, recipientName);
+
+    // Real-time: broadcast si es "ALL", si no al destinatario. No-op si offline.
+    if (dto.recipientId === "ALL") {
+      this.realtime.emitToAll("notification:new", payload);
+    } else {
+      this.realtime.emitToUser(dto.recipientId, "notification:new", payload);
+    }
+    return payload;
   }
 
   async getInbox(userId: string, page: number, limit: number) {

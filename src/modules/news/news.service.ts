@@ -3,12 +3,14 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { S3Service } from "../../common/s3/s3.service";
 import { CreateNewsDto } from "./dto/create-news.dto";
 import { UpdateNewsDto } from "./dto/update-news.dto";
+import { RealtimeGateway } from "../realtime/realtime.gateway";
 
 @Injectable()
 export class NewsService {
   constructor(
     private prisma: PrismaService,
     private s3: S3Service,
+    private realtime: RealtimeGateway,
   ) {}
 
   async findAll({ page, limit }: { page: number; limit: number }) {
@@ -62,6 +64,15 @@ export class NewsService {
         description: dto.description,
         imageUrl,
       },
+    });
+
+    // Real-time: la noticia es visible para todos → broadcast a los conectados.
+    this.realtime.emitToAll("news:published", {
+      id: news.id,
+      title: news.title,
+      description: news.description,
+      imageUrl: news.imageUrl,
+      createdAt: news.createdAt,
     });
 
     return {

@@ -32,6 +32,7 @@ import { NotificationsModule } from "./modules/notifications/notifications.modul
 import { TasksModule } from "./modules/tasks/tasks.module";
 import { NewsModule } from "./modules/news/news.module";
 import { UafeFormsModule } from "./modules/uafe-forms/uafe-forms.module";
+import { RealtimeModule } from "./modules/realtime/realtime.module";
 import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
 import { UserThrottlerGuard } from "./common/guards/user-throttler.guard";
 
@@ -98,6 +99,7 @@ import { UserThrottlerGuard } from "./common/guards/user-throttler.guard";
     TasksModule,
     NewsModule,
     UafeFormsModule,
+    RealtimeModule,
   ],
   providers: [
     // Throttler global, tracking por-usuario (JWT) con fallback a IP.

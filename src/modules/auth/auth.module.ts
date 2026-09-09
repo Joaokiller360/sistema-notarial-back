@@ -6,6 +6,7 @@ import { AuthService } from "./auth.service";
 import { JwtStrategy } from "./strategies/jwt.strategy";
 import { JwtRefreshStrategy } from "./strategies/jwt-refresh.strategy";
 import { LogsModule } from "../logs/logs.module";
+import { RealtimeModule } from "../realtime/realtime.module";
 import { TokenDenylistModule } from "../../common/token-denylist/token-denylist.module";
 
 @Module({
@@ -13,6 +14,7 @@ import { TokenDenylistModule } from "../../common/token-denylist/token-denylist.
     PassportModule.register({ defaultStrategy: "jwt" }),
     JwtModule.register({}),
     LogsModule,
+    RealtimeModule,
     TokenDenylistModule,
   ],
   controllers: [AuthController],
