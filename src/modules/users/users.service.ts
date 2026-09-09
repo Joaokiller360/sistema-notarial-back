@@ -195,6 +195,21 @@ export class UsersService {
       });
     }
 
+    // Restricción de PDF: si cambió el flag, avisa para resincronizar sin
+    // esperar al polling de /auth/me. true = se le quita el permiso de descarga.
+    if (
+      dto.pdfDownloadDisabled !== undefined &&
+      dto.pdfDownloadDisabled !== existing.pdfDownloadDisabled
+    ) {
+      this.realtime.emitToUser(id, "permissions:updated", {
+        userId: id,
+        reason: dto.pdfDownloadDisabled
+          ? "permission_revoked"
+          : "permission_granted",
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
     // Desactivación de cuenta: cierra la sesión WS de inmediato. En el próximo
     // request REST el JwtStrategy ya lo rechaza (filtra isActive: true).
     if (dto.isActive === false && existing.isActive) {
