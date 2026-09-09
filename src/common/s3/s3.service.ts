@@ -84,17 +84,22 @@ export class S3Service {
    * `disposition` defaults to "attachment" (force download). Pass "inline" for
    * users whose PDF download/print is restricted — they can still view the file
    * in-app but no "Save as" filename is offered by the browser.
+   * `cacheControl` is echoed back by S3 as the `Cache-Control` response header —
+   * pass "no-store" for short-lived preview URLs so the bytes are not cached on
+   * the restricted user's disk.
    */
   async getSignedUrl(
     key: string,
     expiresIn = 3600,
     disposition: "attachment" | "inline" = "attachment",
+    cacheControl?: string,
   ): Promise<string> {
     try {
       const command = new GetObjectCommand({
         Bucket: this.bucket,
         Key: key,
         ResponseContentDisposition: disposition,
+        ...(cacheControl && { ResponseCacheControl: cacheControl }),
       });
       return await getSignedUrl(this.client, command, { expiresIn });
     } catch (err) {

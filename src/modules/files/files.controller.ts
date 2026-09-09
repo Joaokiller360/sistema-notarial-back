@@ -92,9 +92,19 @@ export class FilesController {
     if (!key || !/^(pdfs|uploads)\/[\w\-/]+\.(pdf|jpg|jpeg|png|webp)$/i.test(key)) {
       return { error: "Key de archivo inválida" };
     }
-    // Restricted users get an inline URL (view only, no forced-download filename)
-    const disposition = user.pdfDownloadDisabled ? "inline" : "attachment";
-    const viewUrl = await this.s3.getSignedUrl(key, 3600, disposition);
-    return { viewUrl, expiresIn: 3600, downloadRestricted: !!user.pdfDownloadDisabled };
+    // Restricted users get an inline, short-lived, non-cacheable URL so the
+    // browser previews it in an <iframe> without the front pulling the whole
+    // blob into memory, and the bytes are not retained on disk.
+    const restricted = !!user.pdfDownloadDisabled;
+    const disposition = restricted ? "inline" : "attachment";
+    const expiresIn = restricted ? 60 : 3600;
+    const cacheControl = restricted ? "no-store" : undefined;
+    const viewUrl = await this.s3.getSignedUrl(
+      key,
+      expiresIn,
+      disposition,
+      cacheControl,
+    );
+    return { viewUrl, expiresIn, downloadRestricted: restricted };
   }
 }

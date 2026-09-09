@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -319,9 +320,16 @@ export class ArchivesController {
 
   @Get(":id/pdf")
   @RequirePermissions("archives:read")
-  @ApiOperation({ summary: "Obtener URL firmada para visualizar PDF del archivo notarial" })
+  @ApiOperation({
+    summary: "URL firmada del PDF del archivo notarial",
+    description:
+      "Sin query o ?mode=download: descarga (attachment, 1h) — 403 si el " +
+      "usuario tiene pdfDownloadDisabled. ?mode=view: previsualización " +
+      "(inline, 60s, no-store) — permitida para todos.",
+  })
   async viewPdf(
     @Param("id", ParseUUIDPipe) id: string,
+    @Query("mode") mode: string | undefined,
     @CurrentUser() user: JwtPayload,
     @Res() res: Response,
   ) {
@@ -332,13 +340,25 @@ export class ArchivesController {
         .json({ success: false, message: "Este archivo no tiene PDF adjunto" });
     }
 
-    // S3: generate a presigned URL valid for 1 hour and redirect.
-    // Restricted users get an inline disposition (view only, no forced download).
-    const disposition = user.pdfDownloadDisabled ? "inline" : "attachment";
+    const isView = mode === "view";
+    const restricted = !!user.pdfDownloadDisabled;
+
+    // Descarga (attachment): prohibida para usuarios restringidos — nunca se
+    // les entrega el PDF como archivo. Sólo pueden previsualizar vía mode=view.
+    if (!isView && restricted) {
+      throw new ForbiddenException(
+        "Descarga de PDF restringida para tu usuario. Usa la vista previa.",
+      );
+    }
+
+    // S3: presigned URL + redirect.
+    //  - view: inline, TTL corto, sin caché en disco.
+    //  - download: attachment, 1h.
     const signedUrl = await this.s3Service.getSignedUrl(
       archive.pdfUrl,
-      3600,
-      disposition,
+      isView ? 60 : 3600,
+      isView ? "inline" : "attachment",
+      isView ? "no-store" : undefined,
     );
     return res.redirect(signedUrl);
   }
