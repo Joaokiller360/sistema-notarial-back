@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { APP_GUARD } from "@nestjs/core";
+import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { ConfigModule } from "@nestjs/config";
 import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
 import { WinstonModule } from "nest-winston";
@@ -32,6 +32,7 @@ import { NotificationsModule } from "./modules/notifications/notifications.modul
 import { TasksModule } from "./modules/tasks/tasks.module";
 import { NewsModule } from "./modules/news/news.module";
 import { UafeFormsModule } from "./modules/uafe-forms/uafe-forms.module";
+import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
 
 @Module({
   imports: [
@@ -101,6 +102,12 @@ import { UafeFormsModule } from "./modules/uafe-forms/uafe-forms.module";
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    // Persist an audit row in `logs` for every mutation / search / download /
+    // auth request. Registered here (not in main.ts) so it can inject LogsService.
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: AuditInterceptor,
     },
   ],
 })
