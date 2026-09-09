@@ -7,6 +7,7 @@ import {
 import { RoleType } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { LogsService } from "../logs/logs.service";
+import { RealtimeGateway } from "../realtime/realtime.gateway";
 import { CreateRoleDto } from "./dto/create-role.dto";
 import { UpdateRoleDto } from "./dto/update-role.dto";
 import {
@@ -52,7 +53,28 @@ export class RolesService {
   constructor(
     private prisma: PrismaService,
     private logs: LogsService,
+    private realtime: RealtimeGateway,
   ) {}
+
+  /**
+   * Real-time UI hint a todos los usuarios que tienen un rol dado: recarguen
+   * sus permisos (GET /auth/me). NO es autorización — los guards ya leen de DB
+   * en cada request. `emitToUser` es no-op para los que no están conectados.
+   */
+  private async notifyRoleMembers(roleId: string, reason: string): Promise<void> {
+    const members = await this.prisma.userRole.findMany({
+      where: { roleId },
+      select: { userId: true },
+    });
+    const updatedAt = new Date().toISOString();
+    for (const { userId } of members) {
+      this.realtime.emitToUser(userId, "permissions:updated", {
+        userId,
+        reason,
+        updatedAt,
+      });
+    }
+  }
 
   async findAll(page = 1, limit = 20) {
     const where = { deletedAt: null };
@@ -146,6 +168,12 @@ export class RolesService {
       resourceId: id,
       ip,
     });
+
+    // Si cambió el set de permisos del rol, avisa a todos sus miembros.
+    if (dto.permissionIds !== undefined) {
+      await this.notifyRoleMembers(id, "role_changed");
+    }
+
     return role;
   }
 
@@ -225,6 +253,13 @@ export class RolesService {
       details: { userId, roleName: role.name },
       ip,
     });
+
+    this.realtime.emitToUser(userId, "permissions:updated", {
+      userId,
+      reason: "role_changed",
+      updatedAt: new Date().toISOString(),
+    });
+
     return { message: "Rol asignado correctamente" };
   }
 
@@ -261,6 +296,13 @@ export class RolesService {
       details: { userId, roleName: role.name },
       ip,
     });
+
+    this.realtime.emitToUser(userId, "permissions:updated", {
+      userId,
+      reason: "role_changed",
+      updatedAt: new Date().toISOString(),
+    });
+
     return { message: "Rol revocado correctamente" };
   }
 }

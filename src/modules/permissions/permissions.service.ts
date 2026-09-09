@@ -5,6 +5,7 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { LogsService } from "../logs/logs.service";
+import { RealtimeGateway } from "../realtime/realtime.gateway";
 import { CreatePermissionDto } from "./dto/create-permission.dto";
 import { UpdatePermissionDto } from "./dto/update-permission.dto";
 import {
@@ -17,7 +18,28 @@ export class PermissionsService {
   constructor(
     private prisma: PrismaService,
     private logs: LogsService,
+    private realtime: RealtimeGateway,
   ) {}
+
+  /**
+   * Real-time UI hint a todos los usuarios que tienen el rol afectado: recarguen
+   * permisos (GET /auth/me). NO es autorización — los guards leen de DB en cada
+   * request. `emitToUser` es no-op si el usuario no está conectado.
+   */
+  private async notifyRoleMembers(roleId: string, reason: string): Promise<void> {
+    const members = await this.prisma.userRole.findMany({
+      where: { roleId },
+      select: { userId: true },
+    });
+    const updatedAt = new Date().toISOString();
+    for (const { userId } of members) {
+      this.realtime.emitToUser(userId, "permissions:updated", {
+        userId,
+        reason,
+        updatedAt,
+      });
+    }
+  }
 
   async findAll(page = 1, limit = 50) {
     const [data, total] = await this.prisma.$transaction([
@@ -109,6 +131,9 @@ export class PermissionsService {
       details: { roleId, permissionId },
       ip,
     });
+
+    await this.notifyRoleMembers(roleId, "permission_granted");
+
     return { message: "Permiso otorgado correctamente" };
   }
 
@@ -128,6 +153,9 @@ export class PermissionsService {
       details: { roleId, permissionId },
       ip,
     });
+
+    await this.notifyRoleMembers(roleId, "permission_revoked");
+
     return { message: "Permiso revocado correctamente" };
   }
 }

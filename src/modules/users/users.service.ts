@@ -9,6 +9,7 @@ import { RoleType } from "@prisma/client";
 import * as bcrypt from "bcrypt";
 import { PrismaService } from "../../prisma/prisma.service";
 import { LogsService } from "../logs/logs.service";
+import { RealtimeGateway } from "../realtime/realtime.gateway";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { JwtPayload } from "../../common/decorators/current-user.decorator";
@@ -51,6 +52,7 @@ export class UsersService {
     private prisma: PrismaService,
     private config: ConfigService,
     private logs: LogsService,
+    private realtime: RealtimeGateway,
   ) {}
 
   async findAll(page = 1, limit = 20, search?: string) {
@@ -181,6 +183,28 @@ export class UsersService {
       resourceId: id,
       ip,
     });
+
+    // Real-time UI hint: si cambió el set de roles, avisa al usuario para que
+    // recargue sus permisos (GET /auth/me). No es autorización — los guards ya
+    // leen roles/permisos de DB en cada request. No-op si no está conectado.
+    if (dto.roleIds?.length) {
+      this.realtime.emitToUser(id, "permissions:updated", {
+        userId: id,
+        reason: "role_changed",
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    // Desactivación de cuenta: cierra la sesión WS de inmediato. En el próximo
+    // request REST el JwtStrategy ya lo rechaza (filtra isActive: true).
+    if (dto.isActive === false && existing.isActive) {
+      this.realtime.emitToUser(id, "account:deactivated", {
+        userId: id,
+        updatedAt: new Date().toISOString(),
+      });
+      this.realtime.disconnectUser(id);
+    }
+
     return user;
   }
 
