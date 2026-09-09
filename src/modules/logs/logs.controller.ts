@@ -1,5 +1,6 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { LogsService } from './logs.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -15,6 +16,10 @@ export class LogsController {
   constructor(private readonly logsService: LogsService) {}
 
   @Get()
+  // Admin-only + gated by `logs:read`. La UI puede pedir hasta ~1000 filas
+  // paginando en trozos de 100 (varios GET seguidos), así que se exime del
+  // rate-limit global para no cortar esa carga.
+  @SkipThrottle()
   @ApiOperation({ summary: 'Obtener logs del sistema (solo Admin)' })
   findAll(@Query() query: GetLogsDto) {
     return this.logsService.findAll(query.page, query.limit, {
